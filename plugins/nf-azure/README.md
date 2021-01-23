@@ -20,7 +20,8 @@ by the blob service is not closed timely.
             exclude group: 'org.slf4j', module: 'slf4j-api'
         }
 
-* Allow accessing the Blob service via SAS token instead of account key  
+* Allow accessing the Blob service via SAS token instead of account key 
+* Remove invalid directory from .command.run PATH for project having `bin/` folder  
 
 ### Links
 * https://github.com/Azure/azure-sdk-for-java/wiki
