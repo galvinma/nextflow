@@ -63,6 +63,7 @@ class AzBatchTaskHandler extends TaskHandler {
         this.errorFile = task.workDir.resolve(TaskRun.CMD_ERRFILE)
         this.exitFile = task.workDir.resolve(TaskRun.CMD_EXIT)
         this.remoteBinDir = executor.remoteBinDir
+        this.sasToken = executor.sasToken
         validateConfiguration()
     }
 
@@ -76,11 +77,8 @@ class AzBatchTaskHandler extends TaskHandler {
         }
     }
 
-
     @Override
     void submit() {
-        //this.sas = AzHelper.generateSas(task.workDir, Duration.of('1h'), 'rw')
-        this.sasToken = executor.config.storage().sasToken
         log.debug "[AZURE BATCH] Submitting task $task.name - work-dir=${task.workDirStr}"
         new BashWrapperBuilder(taskBean, new AzFileCopyStrategy(taskBean, sasToken, remoteBinDir)) {
             @Override

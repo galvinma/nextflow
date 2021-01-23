@@ -35,7 +35,7 @@ import nextflow.util.ServiceName
 import org.pf4j.ExtensionPoint
 
 /**
- * Azure Batch executor
+ * Nextflow executor for Azure batch service
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
@@ -44,11 +44,13 @@ import org.pf4j.ExtensionPoint
 @CompileStatic
 class AzBatchExecutor extends Executor implements ExtensionPoint {
 
-    Path remoteBinDir
+    private Path remoteBinDir
 
-    AzConfig config
+    private AzConfig config
 
-    AzBatchService batchService
+    private AzBatchService batchService
+
+    private String sasToken
 
     /**
      * @return {@code true} to signal containers are managed directly the AWS Batch service
@@ -100,6 +102,7 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
         super.register()
         config = AzConfig.getConfig(session)
         batchService = new AzBatchService(this)
+        sasToken = config.storage().sasToken ?: AzHelper.generateContainerSas(workDir, config.storage().tokenDuration)
         validateWorkDir()
         validatePathDir()
         uploadBinDir()
@@ -108,7 +111,15 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
 
     @PackageScope
     Path getRemoteBinDir() {
-        remoteBinDir
+        return remoteBinDir
+    }
+
+    @PackageScope String getSasToken() {
+        return sasToken
+    }
+
+    @PackageScope AzConfig getConfig() {
+        return config
     }
 
     @Override

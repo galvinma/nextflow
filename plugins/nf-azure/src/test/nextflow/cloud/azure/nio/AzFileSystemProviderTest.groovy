@@ -87,7 +87,7 @@ class AzFileSystemProviderTest extends Specification {
         thrown(IllegalArgumentException)
     }
 
-    def 'should create a new file system'() {
+    def 'should create a new file system with account key'() {
 
         given:
         def storage = GroovyMock(BlobServiceClient)
@@ -102,7 +102,33 @@ class AzFileSystemProviderTest extends Specification {
         when:
         def fs = provider.newFileSystem(uri, env)
         then:
-        1 * provider.createBlobServiceClient(NAME, KEY) >> storage
+        1 * provider.createBlobServiceWithKey(NAME, KEY) >> storage
+        fs.containerName == 'bucket-example'
+        fs.provider() == provider
+        provider.getFileSystem(uri) == fs
+
+        when:
+        provider.newFileSystem(uri, env)
+        then:
+        thrown(FileSystemAlreadyExistsException)
+    }
+
+    def 'should create a new file system with sas token'() {
+
+        given:
+        def storage = GroovyMock(BlobServiceClient)
+        def provider = Spy(AzFileSystemProvider)
+        and:
+        def NAME = 'xyz'
+        def TOKEN = '1234'
+        and:
+        def uri = new URI('az://bucket-example/alpha/bravo')
+        def env = [AZURE_STORAGE_ACCOUNT_NAME: NAME, AZURE_STORAGE_SAS_TOKEN: TOKEN]
+
+        when:
+        def fs = provider.newFileSystem(uri, env)
+        then:
+        1 * provider.createBlobServiceWithToken(NAME, TOKEN) >> storage
         fs.containerName == 'bucket-example'
         fs.provider() == provider
         provider.getFileSystem(uri) == fs
@@ -129,7 +155,7 @@ class AzFileSystemProviderTest extends Specification {
         when:
         def fs= provider.newFileSystem0(CONTAINER, config)
         then:
-        1 * provider.createBlobServiceClient(NAME, KEY) >> storage
+        1 * provider.createBlobServiceWithKey(NAME, KEY) >> storage
         1 * provider.createFileSystem(_, CONTAINER, config) >> FS
         and:
         fs == FS

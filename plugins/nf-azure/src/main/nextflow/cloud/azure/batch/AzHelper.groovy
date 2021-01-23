@@ -3,8 +3,8 @@ package nextflow.cloud.azure.batch
 import java.nio.file.Path
 import java.time.OffsetDateTime
 
-import com.azure.storage.blob.BlobClient
-import com.azure.storage.blob.sas.BlobSasPermission
+import com.azure.storage.blob.BlobContainerClient
+import com.azure.storage.blob.sas.BlobContainerSasPermission
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues
 import groovy.transform.CompileStatic
 import nextflow.cloud.azure.nio.AzPath
@@ -35,17 +35,29 @@ class AzHelper {
         return !sas ? url : "${url}?${sas}"
     }
 
-    static String generateSas(Path path, Duration duration, String perms) {
-        generateSas(az0(path).blobClient(), duration, perms)
+    static String generateContainerSas(Path path, Duration duration) {
+        generateSas(az0(path).containerClient(), duration)
     }
 
-    static String generateSas(BlobClient client, Duration duration, String perms) {
-        final offset = OffsetDateTime
-                .now()
-                .plusSeconds(duration.seconds)
+    static BlobContainerSasPermission CONTAINER_PERMS = new BlobContainerSasPermission()
+            .setAddPermission(true)
+            .setCreatePermission(true)
+            .setDeletePermission(true)
+            .setListPermission(true)
+            .setMovePermission(true)
+            .setReadPermission(true)
+            .setTagsPermission(true)
+            .setWritePermission(true)
 
-        return client
-                .generateSas(new BlobServiceSasSignatureValues(offset, BlobSasPermission.parse(perms)))
+    static String generateSas(BlobContainerClient client, Duration duration) {
+        final now = OffsetDateTime .now()
+
+        final signature = new BlobServiceSasSignatureValues()
+                .setPermissions(CONTAINER_PERMS)
+                .setStartTime(now)
+                .setExpiryTime( now.plusSeconds(duration.toSeconds()) )
+
+        return client .generateSas(signature)
     }
 
 }

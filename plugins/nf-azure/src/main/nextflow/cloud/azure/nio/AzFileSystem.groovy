@@ -25,6 +25,7 @@ import groovy.transform.CompileStatic
 import groovy.transform.PackageScope
 import groovy.util.logging.Slf4j
 /**
+ * Implements a file system for Azure Blob Storage service
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
@@ -38,9 +39,9 @@ class AzFileSystem extends FileSystem {
         boolean empty
     }
 
-    private static String EMPTY_DIR_MARKER = '.az_dir'
+    private static String EMPTY_DIR_MARKER = '.azure_blob_dir'
 
-    private static String ROOT = '/'
+    private static String SLASH = '/'
 
     private AzFileSystemProvider provider
 
@@ -81,16 +82,16 @@ class AzFileSystem extends FileSystem {
 
     @Override
     boolean isReadOnly() {
-        return containerName == ROOT
+        return containerName == SLASH
     }
 
     @Override
     String getSeparator() {
-        return '/'
+        return SLASH
     }
 
     Iterable<? extends Path> getRootDirectories() {
-        return containerName == ROOT ? listContainers() : [new AzPath(this, "/$containerName/") ]
+        return containerName == SLASH ? listContainers() : [new AzPath(this, "/$containerName/") ]
     }
 
     private Iterable<? extends Path> listContainers() {
@@ -193,7 +194,9 @@ class AzFileSystem extends FileSystem {
             throw new IllegalArgumentException("Operation not allowed on blob container path: ${path.toUriString()}")
 
         try {
-            final writer = Channels.newChannel(path.blobClient().getAppendBlobClient().getBlobOutputStream())
+            final client = path.blobClient()
+            final outStream = client.getBlockBlobClient().getBlobOutputStream(true)
+            final writer = Channels.newChannel(outStream)
             return new AzWriteableByteChannel(writer)
         }
         catch (BlobStorageException e) {
@@ -209,13 +212,12 @@ class AzFileSystem extends FileSystem {
         if( !dir.containerName )
             throw new NoSuchFileException("Missing Azure storage container name: ${dir.toUriString()}")
 
-        if( dir.containerName == ROOT ) {
+        if( dir.containerName == SLASH ) {
             return listContainers(dir, filter)
         }
         else {
             listFiles(dir, filter)
         }
-
     }
 
 
@@ -288,7 +290,15 @@ class AzFileSystem extends FileSystem {
         }
         else {
             path.directory = true
-            path.resolve(EMPTY_DIR_MARKER).blobClient().getAppendBlobClient().create()
+            // Create an hidden file blob to as a placeholder for a new empty directory
+            // NOTE: this is *not* required by this implementation however third party tools
+            // such as azcopy get confused creation a blob name ending with a slash
+            // therefore this library creates an hidden file to simulate the creation
+            // of a directory
+            path.resolve(EMPTY_DIR_MARKER)
+                    .blobClient()
+                    .getAppendBlobClient()
+                    .create()
         }
     }
 
@@ -384,11 +394,9 @@ class AzFileSystem extends FileSystem {
 
     @PackageScope
     void copy(AzPath source, AzPath target) {
-
         SyncPoller<BlobCopyInfo, Void> pollResponse =
                 target.blobClient().beginCopy( source.blobClient().getBlobUrl(), null )
         pollResponse.waitForCompletion(Duration.ofSeconds(maxCopyDurationSecs))
-
     }
 
     @PackageScope
@@ -397,7 +405,7 @@ class AzFileSystem extends FileSystem {
         if( cache )
             return cache
 
-        if( path.toString() == ROOT ) {
+        if( path.toString() == SLASH ) {
             return AzFileAttributes.root()
         }
 
@@ -442,50 +450,16 @@ class AzFileSystem extends FileSystem {
     }
 
     @PackageScope
-    AzFileAttributes readDirectoryAttrs(AzPath path) {
-        final opts = new ListBlobsOptions()
-                .setPrefix(path.blobName())
-                .setMaxResultsPerPage(10)
-
-        final itr = path
-                .containerClient()
-                .listBlobs( opts, null)
-                .iterator()
-
-        int count=0
-        boolean exists=false
-        while( itr.hasNext() ) {
-            count++
-            final blob = itr.next()
-            if( blob.name == path.blobName() && !blob.name.endsWith('/')) {
-                exists = true
-            }
-            else if( blob.name == path.blobName() + '/') {
-                return new AzFileAttributes(path.checkContainerName(), blob)
-            }
-        }
-
-        if( count && !exists && path.isDirectory() ) {
-            def name = path.blobName()
-            if( !name.endsWith('/') ) name+='/'
-            return new AzFileAttributes(path.containerClient(), name)
-        }
-
-        throw new NoSuchFileException(path.toUriString())
-    }
-
-    @PackageScope
     AzFileAttributesView getFileAttributeView(AzPath path) {
         try {
             return new AzFileAttributesView(path.blobClient())
         }
         catch (BlobStorageException e) {
             if( e.statusCode==404 )
-                throw new NoSuchFileException("File does not exist: ${path.toUriString()}")
+                throw new NoSuchFileException(path.toUriString())
             else
                 throw new IOException("Unable to get attributes for file: ${path.toUriString()}", e)
         }
-
     }
 
     @PackageScope

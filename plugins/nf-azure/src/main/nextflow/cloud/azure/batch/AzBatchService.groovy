@@ -37,6 +37,8 @@ import com.microsoft.azure.batch.protocol.models.VirtualMachineConfiguration
 import groovy.transform.CompileStatic
 import groovy.transform.Memoized
 import groovy.util.logging.Slf4j
+import nextflow.Global
+import nextflow.Session
 import nextflow.cloud.azure.config.AzConfig
 import nextflow.cloud.azure.config.AzPoolOpts
 import nextflow.cloud.azure.nio.AzPath
@@ -81,7 +83,10 @@ class AzBatchService {
             throw new IllegalArgumentException("Missing Azure Batch account key -- Specify it in the nextflow.config file using the setting 'azure.batch.accountKet'")
 
         final cred = new BatchSharedKeyCredentials(config.batch().endpoint, config.batch().accountName, config.batch().accountKey)
-        return BatchClient.open(cred)
+        final client = BatchClient.open(cred)
+        final sess = Global.session as Session
+        sess.onShutdown { client.protocolLayer().restClient().close() }
+        return client
     }
 
 

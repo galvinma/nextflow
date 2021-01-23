@@ -1,13 +1,7 @@
 package nextflow.cloud.azure.nio
 
-import static java.nio.file.StandardCopyOption.REPLACE_EXISTING
-import static java.nio.file.StandardOpenOption.APPEND
-import static java.nio.file.StandardOpenOption.CREATE
-import static java.nio.file.StandardOpenOption.CREATE_NEW
-import static java.nio.file.StandardOpenOption.DSYNC
-import static java.nio.file.StandardOpenOption.READ
-import static java.nio.file.StandardOpenOption.SYNC
-import static java.nio.file.StandardOpenOption.WRITE
+import static java.nio.file.StandardCopyOption.*
+import static java.nio.file.StandardOpenOption.*
 
 import java.nio.channels.SeekableByteChannel
 import java.nio.file.AccessDeniedException
@@ -36,8 +30,8 @@ import com.azure.storage.common.StorageSharedKeyCredential
 import groovy.transform.CompileStatic
 import groovy.transform.Memoized
 import groovy.util.logging.Slf4j
-
 /**
+ * Implements NIO File system provider for Azure Blob Storage
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
@@ -47,6 +41,8 @@ class AzFileSystemProvider extends FileSystemProvider {
 
     public static final String AZURE_STORAGE_ACCOUNT_NAME = 'AZURE_STORAGE_ACCOUNT_NAME'
     public static final String AZURE_STORAGE_ACCOUNT_KEY = 'AZURE_STORAGE_ACCOUNT_KEY'
+    public static final String AZURE_STORAGE_SAS_TOKEN = 'AZURE_STORAGE_SAS_TOKEN'
+
     public static final String SCHEME = 'az'
 
     private Map<String,AzFileSystem> fileSystems = [:]
@@ -83,38 +79,29 @@ class AzFileSystemProvider extends FileSystemProvider {
         return uri.authority.toLowerCase()
     }
 
-
-    protected BlobServiceClient createBlobServiceClient(String accountName, String accountKey) {
-        createClient0(accountName, accountKey)
-    }
-
     @Memoized
-    BlobServiceClient createClient0(String accountName, String accountKey ) {
-        if( !accountName )
-            throw new IllegalArgumentException("Missing Azure blob storage accountName")
-        if( !accountKey )
-            throw new IllegalArgumentException("Missing Azure blob storage accountKey")
+    protected BlobServiceClient createBlobServiceWithKey(String accountName, String accountKey) {
+        log.debug "Creating Azure blob storage client -- accountName=$accountName; accountKey=${accountKey?.substring(0,5)}.."
 
-        log.debug "Creating Azure blob storage client -- accountName=$accountName"
-
-        /*
-         * Use your Storage account's name and key to create a credential object; this is used to access your account.
-         */
         final credential = new StorageSharedKeyCredential(accountName, accountKey);
-
-        /*
-         * From the Azure portal, get your Storage account blob service URL endpoint.
-         * The URL typically looks like this:
-         */
         final endpoint = String.format(Locale.ROOT, "https://%s.blob.core.windows.net", accountName);
 
-        /*
-         * Create a BlobServiceClient object that wraps the service endpoint, credential and a request pipeline.
-         */
         return new BlobServiceClientBuilder()
                 .endpoint(endpoint)
                 .credential(credential)
-                .buildClient();
+                .buildClient()
+    }
+
+    @Memoized
+    protected BlobServiceClient createBlobServiceWithToken(String accountName, String sasToken) {
+        log.debug "Creating Azure blob storage client -- accountName: $accountName; sasToken: ${sasToken?.substring(0,10)}.."
+
+        final endpoint = String.format(Locale.ROOT, "https://%s.blob.core.windows.net", accountName);
+
+        return new BlobServiceClientBuilder()
+                .endpoint(endpoint)
+                .sasToken(sasToken)
+                .buildClient()
     }
 
     /**
@@ -180,14 +167,18 @@ class AzFileSystemProvider extends FileSystemProvider {
             throw new FileSystemAlreadyExistsException("File system already exists for Azure blob container: `$bucket`")
 
         final accountName = config.get(AZURE_STORAGE_ACCOUNT_NAME) as String
-        if( !accountName )
-            throw new IllegalArgumentException("Missing $AZURE_STORAGE_ACCOUNT_NAME")
-
         final accountKey = config.get(AZURE_STORAGE_ACCOUNT_KEY) as String
-        if( !accountKey )
-            throw new IllegalArgumentException("Missing $AZURE_STORAGE_ACCOUNT_KEY")
+        final sasToken = config.get(AZURE_STORAGE_SAS_TOKEN) as String
 
-        final client = createBlobServiceClient(accountName, accountKey)
+        if( !accountName )
+            throw new IllegalArgumentException("Missing AZURE_STORAGE_ACCOUNT_NAME")
+
+        if( !accountKey && !sasToken )
+            throw new IllegalArgumentException("Missing AZURE_STORAGE_ACCOUNT_KEY or AZURE_STORAGE_SAS_TOKEN")
+
+        final client = sasToken
+                ? createBlobServiceWithToken(accountName, sasToken)
+                : createBlobServiceWithKey(accountName, accountKey)
         final result = createFileSystem(client, bucket, config)
         fileSystems[bucket] = result
         return result
@@ -365,18 +356,13 @@ class AzFileSystemProvider extends FileSystemProvider {
         if( options.contains(CREATE_NEW) ) {
             if( fs.exists(path) )
                 throw new FileAlreadyExistsException(path.toUriString())
-            path.blobClient().getAppendBlobClient().create()
         }
         else if( !options.contains(CREATE)  ) {
             if( !fs.exists(path) )
                 throw new NoSuchFileException(path.toUriString())
         }
-        else {
-            if( !fs.exists(path) )
-                path.blobClient().getAppendBlobClient().create()
-        }
         if( options.contains(APPEND) ) {
-            throw new IllegalArgumentException("File can only written using APPEND mode is not supported by Azure Blob Storage")
+            throw new IllegalArgumentException("File APPEND mode is not supported by Azure Blob Storage")
         }
         return fs.newWritableByteChannel(path)
     }

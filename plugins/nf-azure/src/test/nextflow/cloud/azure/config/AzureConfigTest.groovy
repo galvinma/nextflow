@@ -47,10 +47,11 @@ class AzureConfigTest extends Specification {
         then:
         cfg.storage().accountKey == KEY
         cfg.storage().accountName == NAME
-        cfg.storage().fileStores == STORES
         cfg.storage().sasToken == SAS
         and:
-        cfg.storage().getEnv() == [AzureStorageAccountKey: KEY, AzureStorageFileStores: STORES]
+        cfg.storage().getEnv() == [AZURE_STORAGE_ACCOUNT_KEY: KEY,
+                                   AZURE_STORAGE_ACCOUNT_NAME: NAME,
+                                   AZURE_STORAGE_SAS_TOKEN: SAS ]
         
         and:
         cfg.batch().accountKey == null
@@ -82,7 +83,6 @@ class AzureConfigTest extends Specification {
         and:
         cfg.storage().accountKey == null
         cfg.storage().accountName == null
-        cfg.storage().fileStores == null
         cfg.storage().sasToken == null
     }
 }
