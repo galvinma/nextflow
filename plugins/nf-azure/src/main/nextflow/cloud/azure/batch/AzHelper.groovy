@@ -4,10 +4,10 @@ import java.nio.file.Path
 import java.time.OffsetDateTime
 
 import com.azure.storage.blob.BlobClient
-import com.azure.storage.blob.nio.AzurePath
 import com.azure.storage.blob.sas.BlobSasPermission
 import com.azure.storage.blob.sas.BlobServiceSasSignatureValues
 import groovy.transform.CompileStatic
+import nextflow.cloud.azure.nio.AzPath
 import nextflow.util.Duration
 /**
  * Azure helper functions
@@ -17,19 +17,26 @@ import nextflow.util.Duration
 @CompileStatic
 class AzHelper {
 
-    static private AzurePath az0(Path path){
-        if( path !instanceof AzurePath )
+    static private AzPath az0(Path path){
+        if( path !instanceof AzPath )
             throw new IllegalArgumentException("Not a valid Azure path: $path [${path?.getClass()?.getName()}]")
-        return (AzurePath)path
+        return (AzPath)path
     }
 
     static String toHttpUrl(Path path, String sas=null) {
-        final client = az0(path).toBlobClient()
-        return !sas ? client.getBlobUrl() : "${client.getBlobUrl()}?${sas}"
+        def url = az0(path).blobClient().getBlobUrl()
+        url = URLDecoder.decode(url, 'UTF-8').stripEnd('/')
+        return !sas ? url : "${url}?${sas}"
+    }
+
+    static String toContainerUrl(Path path, String sas) {
+        def url = az0(path).containerClient().getBlobContainerUrl()
+        url = URLDecoder.decode(url, 'UTF-8').stripEnd('/')
+        return !sas ? url : "${url}?${sas}"
     }
 
     static String generateSas(Path path, Duration duration, String perms) {
-        generateSas(az0(path).toBlobClient(), duration, perms)
+        generateSas(az0(path).blobClient(), duration, perms)
     }
 
     static String generateSas(BlobClient client, Duration duration, String perms) {

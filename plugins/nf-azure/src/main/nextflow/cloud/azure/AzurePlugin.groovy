@@ -1,7 +1,7 @@
 package nextflow.cloud.azure
 
-import com.azure.storage.blob.nio.AzureFileSystemProvider
 import groovy.transform.CompileStatic
+import nextflow.cloud.azure.nio.AzFileSystemProvider
 import nextflow.file.FileHelper
 import nextflow.plugin.BasePlugin
 import org.pf4j.PluginWrapper
@@ -22,6 +22,6 @@ class AzurePlugin extends BasePlugin {
     void start() {
         super.start()
         // register Azure file system
-        FileHelper.getOrInstallProvider(AzureFileSystemProvider)
+        FileHelper.getOrInstallProvider(AzFileSystemProvider)
     }
 }

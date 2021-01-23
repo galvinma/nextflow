@@ -2,39 +2,43 @@ package nextflow.cloud.azure.file
 
 import nextflow.Global
 import nextflow.Session
-import nextflow.file.FileHelper
+import nextflow.cloud.azure.nio.AzPath
 import spock.lang.Requires
 import spock.lang.Specification
-import spock.lang.Unroll
 
 /**
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
-@Requires( { System.getenv('AZURE_STORAGE_ACCOUNT_KEY') } )
+@Requires({System.getenv('AZURE_STORAGE_ACCOUNT_NAME') && System.getenv('AZURE_STORAGE_ACCOUNT_KEY')})
 class AzPathFactoryTest extends Specification {
 
-    def setup() {
-        def KEY = System.getenv('AZURE_STORAGE_ACCOUNT_KEY')
-        def ACCOUNT = "nfbucket"
-        def STORES = "my-data"
+    def 'should create az azure path' () {
+        given:
+        def CONFIG = [azure: [
+                storage: [
+                        accountKey: System.getenv('AZURE_STORAGE_ACCOUNT_KEY'),
+                        accountName: System.getenv('AZURE_STORAGE_ACCOUNT_NAME'),
+                ]
+        ]]
+        Global.session = Mock(Session) { getConfig() >> CONFIG }
+        and:
 
-        Global.session = Mock(Session) {
-            getConfig() >> [azure: [storage: [
-                    accountKey: KEY,
-                    accountName: ACCOUNT,
-                    fileStores: STORES
-            ]]]
-        }
-    }
+        when:
+        def path = AzPathFactory.parse(AZ_URI)
+        then:
+        path instanceof AzPath
+        (path as AzPath).containerName == CONTAINER
+        (path as AzPath).blobName() == 'foo/bar'
 
-    @Unroll
-    def 'should convert az path to uri string' () {
-        expect:
-        FileHelper.asPath(STR).toUriString() == EXPECTED
+        when:
+        def ret = AzPathFactory.getUriString(path)
+        then:
+        ret == AZ_URI
 
         where:
-        STR                             | EXPECTED
-        'azb://my-data:/file.txt'       | 'azb://my-data:/file.txt'
+        AZ_URI                  | CONTAINER     | BLOB
+        'az://my-data/foo/bar'  | 'my-data'     | 'foo/bar'
     }
+
 }

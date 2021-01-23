@@ -18,7 +18,6 @@ package nextflow.cloud.azure.batch
 
 import java.nio.file.Path
 
-import com.azure.storage.blob.nio.AzurePath
 import com.microsoft.azure.batch.BatchClient
 import com.microsoft.azure.batch.auth.BatchSharedKeyCredentials
 import com.microsoft.azure.batch.protocol.models.CloudTask
@@ -40,6 +39,7 @@ import groovy.transform.Memoized
 import groovy.util.logging.Slf4j
 import nextflow.cloud.azure.config.AzConfig
 import nextflow.cloud.azure.config.AzPoolOpts
+import nextflow.cloud.azure.nio.AzPath
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 /**
@@ -150,8 +150,8 @@ class AzBatchService {
     }
 
     protected List<ResourceFile> resourceFileUrls(TaskRun task, String sas) {
-        final cmdRun = (AzurePath) task.workDir.resolve(TaskRun.CMD_RUN)
-        final cmdScript = (AzurePath) task.workDir.resolve(TaskRun.CMD_SCRIPT)
+        final cmdRun = (AzPath) task.workDir.resolve(TaskRun.CMD_RUN)
+        final cmdScript = (AzPath) task.workDir.resolve(TaskRun.CMD_SCRIPT)
 
         final resFiles = new ArrayList(10)
 
@@ -178,9 +178,10 @@ class AzBatchService {
 
     protected OutputFile destFile(String localPath, Path targetDir, String sas) {
         log.debug "Task output path: $localPath -> ${targetDir.toUriString()}"
+        def target = targetDir.resolve(localPath)
         final dest = new OutputFileBlobContainerDestination()
-                .withContainerUrl(AzHelper.toHttpUrl(targetDir,sas))
-                .withPath(localPath)
+                .withContainerUrl(AzHelper.toContainerUrl(targetDir,sas))
+                .withPath(target.subpath(1,target.nameCount).toString())
 
         return new OutputFile()
                 .withFilePattern(localPath)

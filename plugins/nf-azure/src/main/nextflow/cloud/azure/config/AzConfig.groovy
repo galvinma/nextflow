@@ -21,6 +21,7 @@ import nextflow.Global
 import nextflow.Session
 
 /**
+ * Model Azure settings defined in the nextflow.config file
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */

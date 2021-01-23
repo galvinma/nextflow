@@ -16,8 +16,9 @@
 
 package nextflow.cloud.azure.config
 
-import com.azure.storage.blob.nio.AzureFileSystem
+
 import groovy.transform.CompileStatic
+import nextflow.cloud.azure.nio.AzFileSystemProvider
 /**
  * Parse Azure settings from nextflow config file
  *
@@ -41,8 +42,8 @@ class AzStorageOpts {
 
     Map<String,Object> getEnv() {
         Map<String, Object> props = new HashMap<>();
-        props.put(AzureFileSystem.AZURE_STORAGE_ACCOUNT_KEY, accountKey);
-        props.put(AzureFileSystem.AZURE_STORAGE_FILE_STORES, fileStores);
+        props.put(AzFileSystemProvider.AZURE_STORAGE_ACCOUNT_KEY, accountKey)
+        props.put(AzFileSystemProvider.AZURE_STORAGE_ACCOUNT_NAME, accountName)
         return props
     }
 

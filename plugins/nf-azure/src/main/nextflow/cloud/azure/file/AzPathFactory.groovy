@@ -23,6 +23,7 @@ import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
 import nextflow.cloud.azure.AzurePlugin
 import nextflow.cloud.azure.config.AzConfig
+import nextflow.cloud.azure.nio.AzPath
 import nextflow.file.FileHelper
 import nextflow.file.FileSystemPathFactory
 /**
@@ -35,28 +36,21 @@ import nextflow.file.FileSystemPathFactory
 class AzPathFactory extends FileSystemPathFactory {
 
     AzPathFactory() {
-      log.debug "Creating Azure path fatory"
+      log.debug "Creating Azure path factory"
     }
 
     @Override
     protected Path parseUri(String uri) {
-        if( !uri.startsWith('azb://') )
+        if( !uri.startsWith('az://') )
             return null
 
         final cfg = AzConfig.getConfig().storage()
 
-        // parse uri
-        final tokens = AzStorageContainerParser.parse(uri)
-        final account = tokens.account ?: cfg.accountName
-        if( !tokens.container )
-            throw new IllegalArgumentException("Invalid Azure storage container URI: $uri")
+        // find the related file system
+        final fs = getFileSystem(new URI(uri), cfg.getEnv())
 
-        // find the related file system 
-        final String accountUri = "azb://?account=$account"
-        final fs = getFileSystem(new URI(accountUri), cfg.getEnv())
-
-        // compose the target path
-        return tokens.path ? fs.getPath(tokens.container+':', tokens.path) : fs.getPath(tokens.container)
+        // resulting az path
+        return fs.getPath(uri.substring(4))
     }
 
     protected FileSystem getFileSystem(URI uri, Map env) {
@@ -79,7 +73,7 @@ class AzPathFactory extends FileSystemPathFactory {
 
     @Override
     protected String toUriString(Path path) {
-        return 'azb://' + path.toAbsolutePath().toString()
+        return path instanceof AzPath ? ((AzPath)path).toUriString() : null
     }
 
 }

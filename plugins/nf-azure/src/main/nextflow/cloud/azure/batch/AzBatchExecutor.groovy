@@ -18,11 +18,11 @@ package nextflow.cloud.azure.batch
 
 import java.nio.file.Path
 
-import com.azure.storage.blob.nio.AzurePath
 import groovy.transform.CompileStatic
 import groovy.transform.PackageScope
 import groovy.util.logging.Slf4j
 import nextflow.cloud.azure.config.AzConfig
+import nextflow.cloud.azure.nio.AzPath
 import nextflow.exception.AbortOperationException
 import nextflow.executor.Executor
 import nextflow.extension.FilesEx
@@ -66,7 +66,7 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
         /*
          * make sure the work dir is a S3 bucket
          */
-        if( !(workDir instanceof AzurePath) ) {
+        if( !(workDir instanceof AzPath) ) {
             session.abort()
             throw new AbortOperationException("When using `$name` executor an Azure bucket must be provided as working directory either using -bucket-dir or -work-dir command line option")
         }

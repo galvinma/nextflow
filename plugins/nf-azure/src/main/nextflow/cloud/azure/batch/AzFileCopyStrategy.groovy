@@ -43,9 +43,9 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
 
         String mover = ( remoteBinDir ?
             """
-            nxf_az_download '${AzHelper.toHttpUrl(remoteBinDir)}' \$PWD/nextflow-bin
-            chmod +x \$PWD/nextflow-bin/*
-            export PATH=\$PWD/nextflow-bin:\$PATH            
+            nxf_az_download '${AzHelper.toHttpUrl(remoteBinDir)}' \$PWD/.nextflow-bin
+            chmod +x \$PWD/.nextflow-bin/*
+            export PATH=\$PWD/.nextflow-bin:\$PATH
             """.stripIndent() : '' )
 
 
