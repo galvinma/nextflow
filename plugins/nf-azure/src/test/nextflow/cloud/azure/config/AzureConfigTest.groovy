@@ -57,6 +57,7 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountKey == null
         cfg.batch().accountName == null
         cfg.batch().endpoint == null
+        cfg.batch().cleanup == null
     }
 
     def 'should get azure batch options' () {
@@ -71,7 +72,8 @@ class AzureConfigTest extends Specification {
                                      [batch:[
                                              accountKey: KEY,
                                              accountName: NAME,
-                                             endpoint: ENDPOINT]] ]
+                                             endpoint: ENDPOINT,
+                                             cleanup: true ]] ]
         }
 
         when:
@@ -80,6 +82,7 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountKey == KEY
         cfg.batch().accountName == NAME
         cfg.batch().endpoint == ENDPOINT
+        cfg.batch().cleanup == true
         and:
         cfg.storage().accountKey == null
         cfg.storage().accountName == null

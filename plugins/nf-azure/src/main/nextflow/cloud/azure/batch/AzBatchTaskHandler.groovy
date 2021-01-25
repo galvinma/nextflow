@@ -45,7 +45,7 @@ class AzBatchTaskHandler extends TaskHandler {
 
     private Path errorFile
 
-    private volatile AzTaskKey opKey
+    private volatile AzTaskKey taskKey
 
     private volatile long timestamp
 
@@ -85,20 +85,20 @@ class AzBatchTaskHandler extends TaskHandler {
             protected boolean shouldUnstageOutputs() { return true }
         }.build()
 
-        this.opKey = batchService.submitTask(task, sasToken)
-        log.debug "[AZURE BATCH] Submitted task $task.name with taskId=$opKey"
+        this.taskKey = batchService.submitTask(task, sasToken)
+        log.debug "[AZURE BATCH] Submitted task $task.name with taskId=$taskKey"
         this.status = TaskStatus.SUBMITTED
     }
 
     @Override
     boolean checkIfRunning() {
-        if( !opKey || !isSubmitted() )
+        if( !taskKey || !isSubmitted() )
             return false
-        final state = taskState0(opKey)
+        final state = taskState0(taskKey)
         // note, include complete status otherwise it hangs if the task
         // completes before reaching this check
         final running = state==TaskState.RUNNING || state==TaskState.COMPLETED
-        log.debug "[AZURE BATCH] Task status $task.name taskId=$opKey; running=$running"
+        log.debug "[AZURE BATCH] Task status $task.name taskId=$taskKey; running=$running"
         if( running )
             this.status = TaskStatus.RUNNING
         return running
@@ -106,19 +106,44 @@ class AzBatchTaskHandler extends TaskHandler {
 
     @Override
     boolean checkIfCompleted() {
-        assert opKey
+        assert taskKey
         if( !isRunning() )
             return false
-        final done = taskState0(opKey)==TaskState.COMPLETED
+        final done = taskState0(taskKey)==TaskState.COMPLETED
         if( done ) {
             // finalize the task
             task.exitStatus = readExitFile()
             task.stdout = outputFile
             task.stderr = errorFile
             status = TaskStatus.COMPLETED
+            deleteTask(taskKey, task)
             return true
         }
         return false
+    }
+
+    protected void deleteTask(AzTaskKey taskKey, TaskRun task) {
+        if( !taskKey )
+            return
+
+        if( cleanupDisabled() )
+            return
+
+        if( !task.isSuccess() ) {
+            // do not delete successfully executed pods for debugging purpose
+            return
+        }
+
+        try {
+            batchService.deleteTask(taskKey)
+        }
+        catch( Exception e ) {
+            log.warn "Unable to cleanup batch task: $taskKey -- see the log file for details", e
+        }
+    }
+
+    protected boolean cleanupDisabled() {
+        return executor.config.batch().cleanup == false
     }
 
     /**
@@ -150,9 +175,9 @@ class AzBatchTaskHandler extends TaskHandler {
 
     @Override
     void kill() {
-        if( !opKey )
+        if( !taskKey )
             return
-        batchService.terminate(opKey)
+        batchService.terminate(taskKey)
     }
 
 }

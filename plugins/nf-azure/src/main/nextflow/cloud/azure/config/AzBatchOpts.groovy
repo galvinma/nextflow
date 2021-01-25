@@ -28,12 +28,14 @@ class AzBatchOpts {
     String accountName
     String accountKey
     String endpoint
+    Boolean cleanup
 
     AzBatchOpts(Map config) {
         assert config!=null
         accountName = config.accountName
         accountKey = config.accountKey
         endpoint = config.endpoint
+        cleanup = config.cleanup
     }
 
     AzPoolOpts pool() {

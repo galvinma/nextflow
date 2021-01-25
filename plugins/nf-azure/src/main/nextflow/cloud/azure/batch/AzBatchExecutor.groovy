@@ -103,6 +103,7 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
         config = AzConfig.getConfig(session)
         batchService = new AzBatchService(this)
         sasToken = config.storage().sasToken ?: AzHelper.generateContainerSas(workDir, config.storage().tokenDuration)
+        session.onShutdown { batchService.close() }
         validateWorkDir()
         validatePathDir()
         uploadBinDir()

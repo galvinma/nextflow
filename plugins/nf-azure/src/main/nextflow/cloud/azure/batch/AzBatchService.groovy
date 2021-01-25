@@ -51,7 +51,7 @@ import nextflow.processor.TaskRun
  */
 @Slf4j
 @CompileStatic
-class AzBatchService {
+class AzBatchService implements Closeable {
 
     static final private List<String> allPoolIds = new ArrayList<>(50)
 
@@ -247,6 +247,7 @@ class AzBatchService {
                     .withVirtualMachineConfiguration(vmConfig)
                     .withVmSize(poolOpts.vmType)
                     .withTargetDedicatedNodes(poolOpts.vmCount)
+                    //.withTaskSlotsPerNode()
 //                    .withEnableAutoScale(true)
 //                    .withAutoScaleEvaluationInterval( new Period().withSeconds(300) ) // cannot be smaller
 //                    .withAutoScaleFormula(scalingFormula)
@@ -259,4 +260,28 @@ class AzBatchService {
         return poolId
     }
 
+    void deleteTask(AzTaskKey key) {
+        client.taskOperations().deleteTask(key.jobId, key.taskId)
+    }
+
+    @Override
+    void close() {
+        // cleanup app successful jobs
+        for( Map.Entry<TaskProcessor,String> entry : allJobIds ) {
+            final proc = entry.key
+            final jobId = entry.value
+            if( proc.hasErrors() ) {
+                log.debug "Preserving Azure job with error: ${jobId}"
+                continue
+            }
+
+            try {
+                log.trace "Deleting Azure job ${jobId}"
+                client.jobOperations().deleteJob(jobId)
+            }
+            catch (Exception e) {
+                log.warn "Unable to delete Azure batch job ${jobId} - Reason: ${e.message ?: e}"
+            }
+        }
+    }
 }
