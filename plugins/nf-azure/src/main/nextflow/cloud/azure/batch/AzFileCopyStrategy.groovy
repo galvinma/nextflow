@@ -58,7 +58,7 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
         set -x 
         
         azcopy() {
-            docker run -e AZCOPY_LOG_LOCATION=$PWD/.azcopy_log -w $PWD -v $PWD:$PWD quay.io/seqeralabs/azcopy azcopy "$@"
+            AZCOPY_LOG_LOCATION=$PWD/.azcopy_log ./azcopy "$@"
         }
 
         nxf_az_upload() {

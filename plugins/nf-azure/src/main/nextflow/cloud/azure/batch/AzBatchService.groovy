@@ -22,6 +22,8 @@ import java.time.Instant
 
 import com.microsoft.azure.batch.BatchClient
 import com.microsoft.azure.batch.auth.BatchSharedKeyCredentials
+import com.microsoft.azure.batch.protocol.models.BatchErrorException
+import com.microsoft.azure.batch.protocol.models.CloudPool
 import com.microsoft.azure.batch.protocol.models.CloudTask
 import com.microsoft.azure.batch.protocol.models.ContainerConfiguration
 import com.microsoft.azure.batch.protocol.models.ImageInformation
@@ -32,6 +34,7 @@ import com.microsoft.azure.batch.protocol.models.OutputFileUploadCondition
 import com.microsoft.azure.batch.protocol.models.OutputFileUploadOptions
 import com.microsoft.azure.batch.protocol.models.PoolAddParameter
 import com.microsoft.azure.batch.protocol.models.PoolInformation
+import com.microsoft.azure.batch.protocol.models.PoolState
 import com.microsoft.azure.batch.protocol.models.ResourceFile
 import com.microsoft.azure.batch.protocol.models.TaskAddParameter
 import com.microsoft.azure.batch.protocol.models.TaskContainerSettings
@@ -282,8 +285,8 @@ class AzBatchService implements Closeable {
         final containerOpts = new TaskContainerSettings()
                 .withImageName(container)
                 // mount host certificates otherwise `azcopy fails
-                //.withContainerRunOptions('-v /etc/ssl/certs:/etc/ssl/certs:ro')
-                .withContainerRunOptions('-u root -v /usr/bin/docker:/usr/bin/docker -v /var/run/docker.sock:/var/run/docker.sock')
+                .withContainerRunOptions('-v /etc/ssl/certs:/etc/ssl/certs:ro -v /etc/pki:/etc/pki:ro')
+//                .withContainerRunOptions('-u root -v /usr/bin/docker:/usr/bin/docker -v /var/run/docker.sock:/var/run/docker.sock')
 
         final pool = allPools.get(poolId)
         if( !pool )
@@ -309,6 +312,10 @@ class AzBatchService implements Closeable {
         final cmdScript = (AzPath) task.workDir.resolve(TaskRun.CMD_SCRIPT)
 
         final resFiles = new ArrayList(10)
+
+        resFiles << new ResourceFile()
+                .withHttpUrl('https://nf-xpack.s3-eu-west-1.amazonaws.com/azcopy/linux_amd64_10.8.0/azcopy')
+                .withFilePath('azcopy')
 
         resFiles << new ResourceFile()
                 .withHttpUrl(AzHelper.toHttpUrl(cmdRun, sas))
@@ -387,46 +394,71 @@ class AzBatchService implements Closeable {
         
         // check existence and create if needed
         log.debug "[AZURE BATCH] Checking VM pool id=$poolId; size=$vmType"
-        if( !client.poolOperations().existsPool(poolId) ) {
-            final image = getImage()
-
-            /**
-             * A container configuration must be provided for a task to run in a specific container.
-             * Such container can be pre-fetched on VM creation or when running the task
-             *
-             * https://github.com/MicrosoftDocs/azure-docs/blob/master/articles/batch/batch-docker-container-workloads.md#:~:text=Run%20container%20applications%20on%20Azure,compatible%20containers%20on%20the%20nodes.
-             */
-            final containerConfig = new ContainerConfiguration();
-
-            final vmConfig = new VirtualMachineConfiguration()
-                    .withNodeAgentSKUId(image.nodeAgentSKUId())
-                    .withImageReference(image.imageReference())
-                    .withContainerConfiguration(containerConfig)
-
-            final poolParams = new PoolAddParameter()
-                    .withId(poolId)
-                    .withVirtualMachineConfiguration(vmConfig)
-                    // https://docs.microsoft.com/en-us/azure/batch/batch-pool-vm-sizes
-                    .withVmSize(vmType.name)
-                    // same as the num ofd cores
-                    // https://docs.microsoft.com/en-us/azure/batch/batch-parallel-node-tasks
-                    .withTaskSlotsPerNode( vmType.numberOfCores )
-
-            if( poolOpts.autoScale ) {
-                poolParams
-                    .withEnableAutoScale(true)
-                    .withAutoScaleEvaluationInterval( new Period().withSeconds(300) ) // cannot be smaller
-                    .withAutoScaleFormula(scalingFormula(poolOpts))
-            }
-            else {
-                poolParams
-                        .withTargetDedicatedNodes(poolOpts.vmCount)
-            }
-
-            client.poolOperations().createPool(poolParams)
+        def pool = getPool(poolId)
+        if( !pool ) {
+            createPool(poolId, vmType)
+        }
+        else if( pool.state() != PoolState.ACTIVE ) {
+            throw new IllegalStateException("Azure Batch pool '$poolId' not in active state")
+        }
+        else if (pool.resizeErrors()) {
+            throw new IllegalStateException("Azure Batch pool '$poolId' has resize errors")
         }
 
         return poolId
+    }
+
+    protected CloudPool getPool(String poolId) {
+        try {
+            return client.poolOperations().getPool(poolId)
+        }
+        catch (BatchErrorException e) {
+            if( e.response().code() == 404 ) {
+                // not found
+                return null
+            }
+            throw e
+        }
+    }
+
+
+    protected void createPool(String poolId, VmType vmType) {
+        final image = getImage()
+
+        /**
+         * A container configuration must be provided for a task to run in a specific container.
+         * Such container can be pre-fetched on VM creation or when running the task
+         *
+         * https://github.com/MicrosoftDocs/azure-docs/blob/master/articles/batch/batch-docker-container-workloads.md#:~:text=Run%20container%20applications%20on%20Azure,compatible%20containers%20on%20the%20nodes.
+         */
+        final containerConfig = new ContainerConfiguration();
+
+        final vmConfig = new VirtualMachineConfiguration()
+                .withNodeAgentSKUId(image.nodeAgentSKUId())
+                .withImageReference(image.imageReference())
+                .withContainerConfiguration(containerConfig)
+
+        final poolParams = new PoolAddParameter()
+                .withId(poolId)
+                .withVirtualMachineConfiguration(vmConfig)
+        // https://docs.microsoft.com/en-us/azure/batch/batch-pool-vm-sizes
+                .withVmSize(vmType.name)
+        // same as the num ofd cores
+        // https://docs.microsoft.com/en-us/azure/batch/batch-parallel-node-tasks
+                .withTaskSlotsPerNode( vmType.numberOfCores )
+
+        if( poolOpts.autoScale ) {
+            poolParams
+                    .withEnableAutoScale(true)
+                    .withAutoScaleEvaluationInterval( new Period().withSeconds(300) ) // cannot be smaller
+                    .withAutoScaleFormula(scalingFormula(poolOpts))
+        }
+        else {
+            poolParams
+                    .withTargetDedicatedNodes(poolOpts.vmCount)
+        }
+
+        client.poolOperations().createPool(poolParams)
     }
 
     protected String scalingFormula(AzPoolOpts opts) {
