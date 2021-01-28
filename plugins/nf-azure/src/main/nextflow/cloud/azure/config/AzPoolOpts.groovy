@@ -20,16 +20,30 @@ import com.microsoft.azure.batch.protocol.models.OSType
 import com.microsoft.azure.batch.protocol.models.VerificationType
 
 /**
+ * Model the setting of a VM pool
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
 class AzPoolOpts {
 
-    String publisher = "microsoft-azure-batch"
-    String offer = "centos-container"
-    String vmType = "STANDARD_A1"
-    OSType type = OSType.LINUX
-    VerificationType verification = VerificationType.VERIFIED
-    int vmCount = 1
+    static public final String DEFAULT_PUBLISHER = "microsoft-azure-batch"
+    static public final String DEFAULT_OFFER = "centos-container"
+    static public final String DEFAULT_VM_TYPE = "STANDARD_A1"
+    static public final OSType DEFAULT_OS_TYPE = OSType.LINUX
 
+    String publisher
+    String offer
+    String vmType
+    OSType osType = DEFAULT_OS_TYPE
+    VerificationType verification = VerificationType.VERIFIED
+    Integer vmCount = 1
+    boolean autoScale
+
+    AzPoolOpts(Map opts) {
+        this.publisher = opts.publisher ?: DEFAULT_PUBLISHER
+        this.offer = opts.offer ?: DEFAULT_OFFER
+        this.vmType = opts.vmType ?: DEFAULT_VM_TYPE
+        this.vmCount = opts.vmCount as Integer ?: 1
+        this.autoScale = opts.autoScale as boolean
+    }
 }

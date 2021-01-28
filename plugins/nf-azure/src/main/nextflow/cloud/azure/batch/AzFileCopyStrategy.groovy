@@ -81,7 +81,7 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
         
             ret=$(azcopy cp "$source?$SAS" "$target" 2>&1) || {
                 ## if fails check if it was trying to download a directory
-                mkdir $target
+                mkdir -p $target
                 azcopy cp "$source/*?$SAS" "$target" --recursive >/dev/null || {
                     rm -rf $target
                     >&2 echo "Unable to download path: $source"

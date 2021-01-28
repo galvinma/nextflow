@@ -58,6 +58,10 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountName == null
         cfg.batch().endpoint == null
         cfg.batch().cleanup == null
+        cfg.batch().location == null
+        cfg.batch().pool().vmType == 'STANDARD_A1'
+        cfg.batch().pool().vmCount == 1
+        cfg.batch().pool().autoScale == false
     }
 
     def 'should get azure batch options' () {
@@ -66,6 +70,7 @@ class AzureConfigTest extends Specification {
         def KEY = 'xyz1343'
         def NAME = 'container-foo'
         def ENDPOINT = 'http://foo/bar'
+        def LOCATION = 'europenorth'
         and:
         def session = Mock(Session) {
             getConfig() >> [ azure:
@@ -73,7 +78,10 @@ class AzureConfigTest extends Specification {
                                              accountKey: KEY,
                                              accountName: NAME,
                                              endpoint: ENDPOINT,
-                                             cleanup: true ]] ]
+                                             location: LOCATION,
+                                             cleanup: true,
+                                             pool: [vmType: 'Foo_A1', autoScale: true]
+                                     ]] ]
         }
 
         when:
@@ -82,10 +90,39 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountKey == KEY
         cfg.batch().accountName == NAME
         cfg.batch().endpoint == ENDPOINT
+        cfg.batch().location == LOCATION
         cfg.batch().cleanup == true
+        and:
+        cfg.batch().pool().vmType == 'Foo_A1'
+        cfg.batch().pool().autoScale == true
         and:
         cfg.storage().accountKey == null
         cfg.storage().accountName == null
         cfg.storage().sasToken == null
+    }
+
+    def 'should get azure batch endpoint from account and location' () {
+
+        given:
+        def KEY = 'xyz1343'
+        def NAME = 'nfbucket'
+        def LOCATION = 'europenorth'
+        and:
+        def session = Mock(Session) {
+            getConfig() >> [ azure:
+                                     [batch:[
+                                             accountKey: KEY,
+                                             accountName: NAME,
+                                             location: LOCATION,
+                                             cleanup: true ]] ]
+        }
+
+        when:
+        def cfg = AzConfig.getConfig(session)
+        then:
+        cfg.batch().accountKey == KEY
+        cfg.batch().accountName == NAME
+        cfg.batch().endpoint == 'https://nfbucket.europenorth.batch.azure.com'
+        cfg.batch().location == LOCATION
     }
 }

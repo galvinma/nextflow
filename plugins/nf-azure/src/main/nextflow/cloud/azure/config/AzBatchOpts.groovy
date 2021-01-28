@@ -28,21 +28,33 @@ class AzBatchOpts {
     String accountName
     String accountKey
     String endpoint
+    String location
     Boolean cleanup
+    AzPoolOpts pool
 
     AzBatchOpts(Map config) {
         assert config!=null
         accountName = config.accountName
         accountKey = config.accountKey
         endpoint = config.endpoint
+        location = config.location
         cleanup = config.cleanup
+        pool = new AzPoolOpts( (Map)config.pool ?: Collections.emptyMap() )
     }
 
     AzPoolOpts pool() {
-        new AzPoolOpts()
+        return pool
     }
 
     String toString() {
         "endpoint=$endpoint; account-name=$accountName; account-key=${accountKey?.redact()}"
+    }
+
+    String getEndpoint() {
+        if( endpoint )
+            return endpoint
+        if( accountName && location )
+            return "https://${accountName}.${location}.batch.azure.com"
+        return null
     }
 }
