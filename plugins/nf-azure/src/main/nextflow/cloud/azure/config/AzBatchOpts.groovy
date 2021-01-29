@@ -30,7 +30,9 @@ class AzBatchOpts {
     String endpoint
     String location
     Boolean cleanup
-    AzPoolOpts pool
+    Boolean autoPool
+
+    Map<String,AzPoolOpts> pools
 
     AzBatchOpts(Map config) {
         assert config!=null
@@ -39,11 +41,26 @@ class AzBatchOpts {
         endpoint = config.endpoint
         location = config.location
         cleanup = config.cleanup
-        pool = new AzPoolOpts( (Map)config.pool ?: Collections.emptyMap() )
+        autoPool = config.autoPool
+        pools = parsePools(config.pools instanceof Map ? config.pools as Map<String,Map> : Collections.<String,Map>emptyMap())
     }
 
-    AzPoolOpts pool() {
-        return pool
+    static Map<String,AzPoolOpts> parsePools(Map<String,Map> pools) {
+        final result = new LinkedHashMap<String,AzPoolOpts>()
+        for( Map.Entry<String,Map> entry : pools ) {
+            result[entry.key] = new AzPoolOpts( entry.value )
+        }
+        if( !result.keySet().contains('auto') )
+            result.put('auto', new AzPoolOpts())
+        return result
+    }
+
+    AzPoolOpts pool(String name) {
+        return pools.get(name)
+    }
+
+    AzPoolOpts autoPoolOpts() {
+        pool('auto')
     }
 
     String toString() {

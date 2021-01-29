@@ -74,7 +74,7 @@ class AzBatchServiceTest extends Specification {
         def svc = new AzBatchService(exec)
 
         when:
-        def vm = svc.getVmSize('northeurope', 'Standard_D1_v2')
+        def vm = svc.getVmType('northeurope', 'Standard_D1_v2')
         then:
         vm.name == 'Standard_D1_v2'
         vm.numberOfCores == 1
@@ -85,8 +85,8 @@ class AzBatchServiceTest extends Specification {
 
 
         when:
-        def vm1= svc.getVmSize('northeurope', 'standard_d1_v2')
-        def vm2= svc.getVmSize('northeurope', 'STANDARD_D1_V2')
+        def vm1= svc.getVmType('northeurope', 'standard_d1_v2')
+        def vm2= svc.getVmType('northeurope', 'STANDARD_D1_V2')
         then:
         vm == vm1
         vm == vm2
@@ -222,7 +222,7 @@ class AzBatchServiceTest extends Specification {
     def 'should guess vm' () {
         given:
         def LOC = 'europe'
-        def TYPE = Mock(VmType)
+        def TYPE = Mock(AzVmType)
         and:
         def exec = Mock(AzBatchExecutor) { getConfig() >> new AzConfig([:]) }
         AzBatchService svc = Spy(AzBatchService, constructorArgs: [exec])
@@ -256,6 +256,33 @@ class AzBatchServiceTest extends Specification {
         1 * svc.findBestVm(LOC, 16, null, 'xyz*')  >> TYPE
         and:
         ret == TYPE
+
+    }
+
+    def 'should check poolid' () {
+        given:
+        def exec = Mock(AzBatchExecutor) { getConfig() >> new AzConfig([:]) }
+        AzBatchService svc = Spy(AzBatchService, constructorArgs: [exec])
+
+        when:
+        svc.checkPoolId('abc')
+        then:
+        noExceptionThrown()
+
+        when:
+        svc.checkPoolId('abc_10')
+        then:
+        noExceptionThrown()
+
+        when:
+        svc.checkPoolId('abc-10')
+        then:
+        noExceptionThrown()
+
+        when:
+        svc.checkPoolId('abc 10')
+        then:
+        thrown(IllegalArgumentException)
 
     }
 

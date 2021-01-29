@@ -4,6 +4,7 @@ import groovy.transform.CompileStatic
 import groovy.transform.EqualsAndHashCode
 import groovy.transform.ToString
 import groovy.transform.builder.Builder
+import nextflow.cloud.azure.config.AzPoolOpts
 
 /**
  * Model the spec of Azure VM pool
@@ -15,7 +16,8 @@ import groovy.transform.builder.Builder
 @ToString(includeNames = true, includePackage = false)
 @EqualsAndHashCode
 @CompileStatic
-class VmPoolSpec {
+class AzVmPoolSpec {
     String poolId
-    VmType vmType
+    AzVmType vmType
+    AzPoolOpts opts
 }

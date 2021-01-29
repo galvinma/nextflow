@@ -59,9 +59,10 @@ class AzureConfigTest extends Specification {
         cfg.batch().endpoint == null
         cfg.batch().cleanup == null
         cfg.batch().location == null
-        cfg.batch().pool().vmType == 'STANDARD_A1'
-        cfg.batch().pool().vmCount == 1
-        cfg.batch().pool().autoScale == false
+        cfg.batch().autoPool == null
+        cfg.batch().autoPoolOpts().vmType == 'STANDARD_A1'
+        cfg.batch().autoPoolOpts().vmCount == 1
+        cfg.batch().autoPoolOpts().autoScale == false
     }
 
     def 'should get azure batch options' () {
@@ -79,8 +80,9 @@ class AzureConfigTest extends Specification {
                                              accountName: NAME,
                                              endpoint: ENDPOINT,
                                              location: LOCATION,
+                                             autoPool: true,
                                              cleanup: true,
-                                             pool: [vmType: 'Foo_A1', autoScale: true]
+                                             pools: [ myPool: [vmType: 'Foo_A1', autoScale: true] ]
                                      ]] ]
         }
 
@@ -91,10 +93,11 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountName == NAME
         cfg.batch().endpoint == ENDPOINT
         cfg.batch().location == LOCATION
+        cfg.batch().autoPool == true
         cfg.batch().cleanup == true
         and:
-        cfg.batch().pool().vmType == 'Foo_A1'
-        cfg.batch().pool().autoScale == true
+        cfg.batch().pool('myPool').vmType == 'Foo_A1'
+        cfg.batch().pool('myPool').autoScale == true
         and:
         cfg.storage().accountKey == null
         cfg.storage().accountName == null

@@ -13,7 +13,7 @@ import nextflow.util.MemoryUnit
 @ToString(includeNames = true, includePackage = false)
 @EqualsAndHashCode
 @CompileStatic
-class VmType {
+class AzVmType {
     String name
     Integer maxDataDiskCount
     MemoryUnit memory
@@ -21,9 +21,9 @@ class VmType {
     MemoryUnit osDiskSize
     MemoryUnit resourceDiskSize
 
-    VmType() {}
+    AzVmType() {}
 
-    VmType(Map map) {
+    AzVmType(Map map) {
         this.name = map.name
         this.maxDataDiskCount = map.maxDataDiskCount as Integer
         this.memory = map.memoryInMb ? MemoryUnit.of( "$map.memoryInMb MB" ) : null

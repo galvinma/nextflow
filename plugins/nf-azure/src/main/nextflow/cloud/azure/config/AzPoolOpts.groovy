@@ -33,11 +33,17 @@ class AzPoolOpts {
 
     String publisher
     String offer
-    String vmType
     OSType osType = DEFAULT_OS_TYPE
     VerificationType verification = VerificationType.VERIFIED
+
+    String vmType
     Integer vmCount = 1
     boolean autoScale
+    String scaleFormula
+
+    AzPoolOpts() {
+        this(Collections.emptyMap())
+    }
 
     AzPoolOpts(Map opts) {
         this.publisher = opts.publisher ?: DEFAULT_PUBLISHER
@@ -45,5 +51,6 @@ class AzPoolOpts {
         this.vmType = opts.vmType ?: DEFAULT_VM_TYPE
         this.vmCount = opts.vmCount as Integer ?: 1
         this.autoScale = opts.autoScale as boolean
+        this.scaleFormula = opts.scaleFormula
     }
 }

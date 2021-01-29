@@ -52,8 +52,8 @@ import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.util.MemoryUnit
 import nextflow.util.MustacheTemplateEngine
+import nextflow.util.Rnd
 import org.joda.time.Period
-
 /**
  * Implements Azure Batch operations for Nextflow executor
  *
@@ -65,9 +65,7 @@ class AzBatchService implements Closeable {
 
     static private final long _1GB = 1 << 30
 
-    static final private Map<String,VmPoolSpec> allPools = new HashMap<>(50)
-
-    AzPoolOpts poolOpts
+    static final private Map<String,AzVmPoolSpec> allPools = new HashMap<>(50)
 
     AzConfig config
 
@@ -76,7 +74,6 @@ class AzBatchService implements Closeable {
     AzBatchService(AzBatchExecutor executor) {
         assert executor
         this.config = executor.config
-        this.poolOpts = config.batch().pool()
     }
 
     @Memoized
@@ -116,12 +113,12 @@ class AzBatchService implements Closeable {
         return listAllVms(location).collect { it.name as String }
     }
 
-    VmType guessBestVm(String location, int cpus, MemoryUnit mem, String family) {
+    AzVmType guessBestVm(String location, int cpus, MemoryUnit mem, String family) {
         if( !family.contains('*') && !family.contains('?') )
             return findBestVm(location, cpus, mem, family)
 
         // well this is a quite heuristic tentative to find a bigger instance to accommodate more tasks
-        VmType result=null
+        AzVmType result=null
         if( cpus<=4 ) {
             result = findBestVm(location, cpus*4, mem!=null ? mem*4 : null, family)
             if( !result )
@@ -135,7 +132,7 @@ class AzBatchService implements Closeable {
         return result
     }
 
-    VmType findBestVm(String location, int cpus, MemoryUnit mem, String family) {
+    AzVmType findBestVm(String location, int cpus, MemoryUnit mem, String family) {
         def all = listAllVms(location)
         def scores = new TreeMap<Double,String>()
         for( Map entry : all ) {
@@ -145,7 +142,7 @@ class AzBatchService implements Closeable {
             if( score != null )
                 scores.put(score, entry.name as String)
         }
-        return getVmSize(location, scores.firstEntry().value)
+        return getVmType(location, scores.firstEntry().value)
     }
 
     protected boolean matchType(String family, String vmType) {
@@ -181,12 +178,12 @@ class AzBatchService implements Closeable {
     }
 
     @Memoized
-    VmType getVmSize(String location, String vmName) {
+    AzVmType getVmType(String location, String vmName) {
         def vm = listAllVms(location).find { vmName.equalsIgnoreCase(it.name?.toString()) }
         if( !vm )
             throw new IllegalArgumentException("Unable to find size for VM name '$vmName' and location '$location'")
 
-        new VmType(vm)
+        new AzVmType(vm)
     }
 
     protected int computeSlots(int cpus, MemoryUnit mem, int vmCpus, MemoryUnit vmMem) {
@@ -201,7 +198,7 @@ class AzBatchService implements Closeable {
         return Math.max(cpuSlots, memSlots(mem0, vmMemGb, vmCpus))
     }
 
-    protected int computeSlots( TaskRun task, VmPoolSpec pool) {
+    protected int computeSlots(TaskRun task, AzVmPoolSpec pool) {
         computeSlots(
                 task.config.getCpus(),
                 task.config.getMemory(),
@@ -253,7 +250,7 @@ class AzBatchService implements Closeable {
             return allJobIds[mapKey]
         }
         // create a batch job
-        final jobId = makeJobId(task) + '-' + Random.newInstance().nextInt(5000)
+        final jobId = makeJobId(task)
         final poolInfo = new PoolInformation()
                             .withPoolId(poolId)
         client
@@ -265,10 +262,15 @@ class AzBatchService implements Closeable {
     }
 
     String makeJobId(TaskRun task) {
-        def name = task
+        final name = task
                 .processor
-                .name.trim().replaceAll(/[^a-zA-Z0-9-_]+/,'_')
-        return "nf-job-$name"
+                .name
+                .trim()
+                .replaceAll(/[^a-zA-Z0-9-_]+/,'_')
+                .toLowerCase()
+
+        final key = "job-${Rnd.hex()}-${name}"
+        return key.size()>64 ? key.substring(0,64) : key
     }
 
     AzTaskKey runTask(String poolId, String jobId, TaskRun task, String sas) {
@@ -286,7 +288,6 @@ class AzBatchService implements Closeable {
                 .withImageName(container)
                 // mount host certificates otherwise `azcopy fails
                 .withContainerRunOptions('-v /etc/ssl/certs:/etc/ssl/certs:ro -v /etc/pki:/etc/pki:ro')
-//                .withContainerRunOptions('-u root -v /usr/bin/docker:/usr/bin/docker -v /var/run/docker.sock:/var/run/docker.sock')
 
         final pool = allPools.get(poolId)
         if( !pool )
@@ -351,25 +352,37 @@ class AzBatchService implements Closeable {
                 .withUploadOptions( new OutputFileUploadOptions().withUploadCondition( OutputFileUploadCondition.TASK_COMPLETION) )
     }
 
-    protected ImageInformation getImage() {
+    protected ImageInformation getImage(AzPoolOpts opts) {
         List<ImageInformation> images = client.accountOperations().listSupportedImages()
 
         for (ImageInformation it : images) {
-            if( it.osType() != poolOpts.osType )
+            if( it.osType() != opts.osType )
                 continue
-            if( it.verificationType() != poolOpts.verification )
+            if( it.verificationType() != opts.verification )
                 continue
-            if( !it.imageReference().publisher().equalsIgnoreCase(poolOpts.publisher) )
+            if( !it.imageReference().publisher().equalsIgnoreCase(opts.publisher) )
                 continue
-            if( it.imageReference().offer().equalsIgnoreCase(poolOpts.offer) )
+            if( it.imageReference().offer().equalsIgnoreCase(opts.offer) )
                 return it
         }
 
-        throw new IllegalStateException("Cannot find a matching VM image with publister=$poolOpts.publisher; offer=$poolOpts.offer; OS type=$poolOpts.osType; verification type=$poolOpts.verification")
+        throw new IllegalStateException("Cannot find a matching VM image with publister=$opts.publisher; offer=$opts.offer; OS type=$opts.osType; verification type=$opts.verification")
     }
 
-    synchronized String getOrCreatePool(TaskRun task) {
+    protected AzVmPoolSpec specFromConfig(String poolId) {
 
+        def opts = config.batch().pool(poolId)
+        if( !opts )
+            throw new IllegalArgumentException("Cannot find Azure Batch config for pool: $poolId")
+
+        def type = getVmType(config.batch().location, opts.vmType)
+        if( !type )
+            throw new IllegalArgumentException("Cannot find Azure Batch VM type '$poolId' - Check pool definition $poolId in the Nextflow config file")
+
+        new AzVmPoolSpec(poolId: poolId, vmType: type, opts: opts)
+    }
+
+    protected AzVmPoolSpec specFromTask(TaskRun task) {
         // define a stable pool name
         final loc = config.batch().location
         if( !loc )
@@ -377,7 +390,7 @@ class AzBatchService implements Closeable {
 
         final mem = task.config.getMemory()
         final cpus = task.config.getCpus()
-        final type = task.config.getMachineType() ?: poolOpts.vmType
+        final type = task.config.getMachineType() ?: config.batch().autoPoolOpts().vmType
         if( !type )
             throw new IllegalArgumentException("Missing Azure Batch VM type")
 
@@ -387,26 +400,66 @@ class AzBatchService implements Closeable {
             throw new IllegalArgumentException(msg)
         }
 
-        final String poolId = "nf-$vmType.name".toLowerCase()
-        final spec = new VmPoolSpec(poolId: poolId, vmType: vmType)
-        // add to the list of pool ids
-        allPools[poolId] = spec
-        
-        // check existence and create if needed
-        log.debug "[AZURE BATCH] Checking VM pool id=$poolId; size=$vmType"
-        def pool = getPool(poolId)
-        if( !pool ) {
-            createPool(poolId, vmType)
+        final poolId = "nf-$vmType.name".toLowerCase()
+        return new AzVmPoolSpec(poolId: poolId, vmType: vmType)
+    }
+
+    protected void checkPool(CloudPool pool, AzVmPoolSpec spec) {
+        if( pool.state() != PoolState.ACTIVE ) {
+            throw new IllegalStateException("Azure Batch pool '${pool.id()}' not in active state")
         }
-        else if( pool.state() != PoolState.ACTIVE ) {
-            throw new IllegalStateException("Azure Batch pool '$poolId' not in active state")
+        else if (pool.resizeErrors() && pool.currentDedicatedNodes()==0 ) {
+            throw new IllegalStateException("Azure Batch pool '${pool.id()}' has resize errors")
         }
-        else if (pool.resizeErrors()) {
-            throw new IllegalStateException("Azure Batch pool '$poolId' has resize errors")
+        if( pool.taskSlotsPerNode() != spec.vmType.numberOfCores ) {
+            throw new IllegalStateException("Azure Batch pool '${pool.id()}' slots per node does not match the VM num cores (slots: ${pool.taskSlotsPerNode()}, cores: ${spec.vmType.numberOfCores})")
         }
+    }
+
+    protected void checkPoolId(String poolId) {
+        if( !poolId.matches(/^[\w\-]+$/) )
+            throw new IllegalArgumentException("Invalid Azure Batch pool Id '$poolId' - It can only contains alphanumeric, hyphen and undershore characters")
+    }
+
+    protected AzVmPoolSpec specForTask(TaskRun task) {
+
+        def poolId = task.config.queue as String
+        if( !poolId && !config.batch().autoPool ) {
+            throw new IllegalArgumentException("No Azure Batch pool was specified for task '${task.name}' - Either specify the pool name using the 'queue' diretive or enable the 'autoPool' provision option")
+        }
+        checkPoolId(poolId)
+
+        if( poolId && allPools.containsKey(poolId) )
+            return allPools.get(poolId)
 
         return poolId
+                ? specFromConfig(poolId)
+                : specFromTask(task)
+
     }
+
+    synchronized String getOrCreatePool(TaskRun task) {
+
+        final spec = specForTask(task)
+        if( spec && allPools.containsKey(spec.poolId) )
+            return spec.poolId
+        
+        // check existence and create if needed
+        log.debug "[AZURE BATCH] Checking VM pool id=$spec.poolId; size=$spec.vmType"
+        def pool = getPool(spec.poolId)
+        if( !pool ) {
+            createPool(spec)
+        }
+        else {
+            checkPool(pool, spec)
+        }
+
+        // add to the list of pool ids
+        allPools[spec.poolId] = spec
+
+        return spec.poolId
+    }
+
 
     protected CloudPool getPool(String poolId) {
         try {
@@ -421,10 +474,7 @@ class AzBatchService implements Closeable {
         }
     }
 
-
-    protected void createPool(String poolId, VmType vmType) {
-        final image = getImage()
-
+    protected VirtualMachineConfiguration poolVmConfig(AzPoolOpts opts) {
         /**
          * A container configuration must be provided for a task to run in a specific container.
          * Such container can be pre-fetched on VM creation or when running the task
@@ -432,30 +482,34 @@ class AzBatchService implements Closeable {
          * https://github.com/MicrosoftDocs/azure-docs/blob/master/articles/batch/batch-docker-container-workloads.md#:~:text=Run%20container%20applications%20on%20Azure,compatible%20containers%20on%20the%20nodes.
          */
         final containerConfig = new ContainerConfiguration();
+        final image = getImage(opts)
 
-        final vmConfig = new VirtualMachineConfiguration()
+        new VirtualMachineConfiguration()
                 .withNodeAgentSKUId(image.nodeAgentSKUId())
                 .withImageReference(image.imageReference())
                 .withContainerConfiguration(containerConfig)
+    }
+
+    protected void createPool(AzVmPoolSpec spec) {
 
         final poolParams = new PoolAddParameter()
-                .withId(poolId)
-                .withVirtualMachineConfiguration(vmConfig)
-        // https://docs.microsoft.com/en-us/azure/batch/batch-pool-vm-sizes
-                .withVmSize(vmType.name)
-        // same as the num ofd cores
-        // https://docs.microsoft.com/en-us/azure/batch/batch-parallel-node-tasks
-                .withTaskSlotsPerNode( vmType.numberOfCores )
+                .withId(spec.poolId)
+                .withVirtualMachineConfiguration(poolVmConfig(spec.opts))
+                // https://docs.microsoft.com/en-us/azure/batch/batch-pool-vm-sizes
+                .withVmSize(spec.vmType.name)
+                // same as the num ofd cores
+                // https://docs.microsoft.com/en-us/azure/batch/batch-parallel-node-tasks
+                .withTaskSlotsPerNode( spec.vmType.numberOfCores )
 
-        if( poolOpts.autoScale ) {
+        if( spec.opts.autoScale ) {
             poolParams
                     .withEnableAutoScale(true)
                     .withAutoScaleEvaluationInterval( new Period().withSeconds(300) ) // cannot be smaller
-                    .withAutoScaleFormula(scalingFormula(poolOpts))
+                    .withAutoScaleFormula(scalingFormula(spec.opts))
         }
         else {
             poolParams
-                    .withTargetDedicatedNodes(poolOpts.vmCount)
+                    .withTargetDedicatedNodes(spec.opts.vmCount)
         }
 
         client.poolOperations().createPool(poolParams)
