@@ -40,36 +40,38 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
     }
 
     @Override
+    String getEnvScript(Map environment, boolean container) {
+        if( container )
+            throw new IllegalArgumentException("Parameter `container` not supported by ${this.class.simpleName}")
+
+        final result = new StringBuilder()
+        final copy = environment ? new LinkedHashMap<String,String>(environment) : new LinkedHashMap<String,String>()
+        copy.remove('PATH')
+        copy.put('PATH', '$PWD/.nextflow-bin:$PATH')
+        copy.put('AZCOPY_LOG_LOCATION', '$PWD/.azcopy_log')
+        copy.put('AZ_SAS', sasToken)
+
+        // finally render the environment
+        final envSnippet = super.getEnvScript(copy,false)
+        if( envSnippet )
+            result << envSnippet
+        return result.toString()
+
+    }
+
+    @Override
     String getBeforeStartScript() {
 
-        String mover = ( remoteBinDir ?
-            """
-            nxf_az_download '${AzHelper.toHttpUrl(remoteBinDir)}' \$PWD/.nextflow-bin
-            chmod +x \$PWD/.nextflow-bin/*
-            export PATH=\$PWD/.nextflow-bin:\$PATH
-            """.stripIndent() : '' )
-
-
         BashFunLib.body(maxParallelTransfers, maxTransferAttempts, delayBetweenAttempts) +
-        """
-        SAS='$sasToken'
-        """.stripIndent() +
-
         '''
-        set -x 
-        
-        azcopy() {
-            AZCOPY_LOG_LOCATION=$PWD/.azcopy_log ./azcopy "$@"
-        }
-
         nxf_az_upload() {
             local name=$1
             local target=${2%/} ## remove ending slash
         
             if [[ -d $name ]]; then
-              azcopy cp "$name" "$target?$SAS" --recursive
+              azcopy cp "$name" "$target?$AZ_SAS" --recursive
             else 
-              azcopy cp "$name" "$target/$name?$SAS"
+              azcopy cp "$name" "$target/$name?$AZ_SAS"
             fi  
         }
         
@@ -80,22 +82,27 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
             local ret
             mkdir -p "$basedir"
         
-            ret=$(azcopy cp "$source?$SAS" "$target" 2>&1) || {
+            ret=$(azcopy cp "$source?$AZ_SAS" "$target" 2>&1) || {
                 ## if fails check if it was trying to download a directory
                 mkdir -p $target
-                azcopy cp "$source/*?$SAS" "$target" --recursive >/dev/null || {
+                azcopy cp "$source/*?$AZ_SAS" "$target" --recursive >/dev/null || {
                     rm -rf $target
                     >&2 echo "Unable to download path: $source"
                     exit 1
                 }
             }
         }
-        '''.stripIndent() + mover
+        '''.stripIndent()
     }
 
     @Override
     String getStageInputFilesScript(Map<String, Path> inputFiles) {
-        def result = 'downloads=(true)\n'
+        String result = ( remoteBinDir ? """\
+            nxf_az_download '${AzHelper.toHttpUrl(remoteBinDir)}' \$PWD/.nextflow-bin
+            chmod +x \$PWD/.nextflow-bin/*
+            """.stripIndent() : '' )
+
+        result += 'downloads=(true)\n'
         result += super.getStageInputFilesScript(inputFiles) + '\n'
         result += 'nxf_parallel "${downloads[@]}"\n'
         return result

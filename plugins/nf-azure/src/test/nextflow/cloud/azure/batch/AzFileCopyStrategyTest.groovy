@@ -80,6 +80,13 @@ class AzFileCopyStrategyTest extends Specification {
                 input: 'Ciao ciao' ] as TaskBean, executor) .makeBinding()
 
         then:
+        binding.stage_inputs == '''\
+                # stage input files
+                downloads=(true)
+                
+                nxf_parallel "${downloads[@]}"
+                '''.stripIndent()
+
         binding.unstage_controls == '''\
                 nxf_az_upload .command.out 'http://account.blob.core.windows.net/my-data/work/dir' || true
                 nxf_az_upload .command.err 'http://account.blob.core.windows.net/my-data/work/dir' || true
@@ -142,22 +149,14 @@ class AzFileCopyStrategyTest extends Specification {
                     unset IFS
                 }
                 
-                SAS='12345'
-                
-                set -x 
-                
-                azcopy() {
-                    AZCOPY_LOG_LOCATION=$PWD/.azcopy_log ./azcopy "$@"
-                }
-                
                 nxf_az_upload() {
                     local name=$1
                     local target=${2%/} ## remove ending slash
                 
                     if [[ -d $name ]]; then
-                      azcopy cp "$name" "$target?$SAS" --recursive
+                      azcopy cp "$name" "$target?$AZ_SAS" --recursive
                     else 
-                      azcopy cp "$name" "$target/$name?$SAS"
+                      azcopy cp "$name" "$target/$name?$AZ_SAS"
                     fi  
                 }
                 
@@ -168,10 +167,10 @@ class AzFileCopyStrategyTest extends Specification {
                     local ret
                     mkdir -p "$basedir"
                 
-                    ret=$(azcopy cp "$source?$SAS" "$target" 2>&1) || {
+                    ret=$(azcopy cp "$source?$AZ_SAS" "$target" 2>&1) || {
                         ## if fails check if it was trying to download a directory
                         mkdir -p $target
-                        azcopy cp "$source/*?$SAS" "$target" --recursive >/dev/null || {
+                        azcopy cp "$source/*?$AZ_SAS" "$target" --recursive >/dev/null || {
                             rm -rf $target
                             >&2 echo "Unable to download path: $source"
                             exit 1
@@ -179,6 +178,129 @@ class AzFileCopyStrategyTest extends Specification {
                     }
                 }
                 
+                '''.stripIndent(true)
+    }
+
+    def 'should include remote bind dir' () {
+        given:
+        def remoteBin = mockAzPath( 'az://my-data/work/remote/bin' )
+        def workDir = mockAzPath( 'az://my-data/work/dir' )
+        def token = '12345'
+        def config = new AzConfig([storage:[sasToken: token]])
+        def executor = Mock(AzBatchExecutor) {
+            getConfig() >> config
+            getRemoteBinDir() >> remoteBin
+        }
+
+        when:
+        def binding = new AzBatchScriptLauncher([
+                name: 'Hello 1',
+                workDir: workDir,
+                script: 'echo Hello world!',
+                environment: [FOO: 1, BAR:'any'],
+                input: 'Ciao ciao' ] as TaskBean, executor) .makeBinding()
+
+        then:
+        binding.stage_inputs == '''\
+                # stage input files
+                nxf_az_download 'http://account.blob.core.windows.net/my-data/work/remote/bin' $PWD/.nextflow-bin
+                chmod +x $PWD/.nextflow-bin/*
+                downloads=(true)
+                
+                nxf_parallel "${downloads[@]}"
+                '''.stripIndent()
+
+        binding.task_env == '''\
+                    export FOO="1"
+                    export BAR="any"
+                    export PATH="$PWD/.nextflow-bin:$PATH"
+                    export AZCOPY_LOG_LOCATION="$PWD/.azcopy_log"
+                    export AZ_SAS="12345"
+                    '''.stripIndent()
+
+        binding.helpers_script == '''\
+                # bash helper functions
+                nxf_cp_retry() {
+                    local max_attempts=1
+                    local timeout=10
+                    local attempt=0
+                    local exitCode=0
+                    while (( \$attempt < \$max_attempts ))
+                    do
+                      if "\$@"
+                        then
+                          return 0
+                      else
+                        exitCode=\$?
+                      fi
+                      if [[ \$exitCode == 0 ]]
+                      then
+                        break
+                      fi
+                      sleep \$timeout
+                      attempt=\$(( attempt + 1 ))
+                      timeout=\$(( timeout * 2 ))
+                    done
+                }
+                
+                nxf_parallel() {
+                    IFS=$'\\n\'
+                    local cmd=("$@")
+                    local cpus=$(nproc 2>/dev/null || < /proc/cpuinfo grep '^process' -c)
+                    local max=$(if (( cpus>16 )); then echo 16; else echo $cpus; fi)
+                    local i=0
+                    local pid=()
+                    (
+                    set +u
+                    while ((i<${#cmd[@]})); do
+                        local copy=()
+                        for x in "${pid[@]}"; do
+                          [[ -e /proc/$x ]] && copy+=($x)
+                        done
+                        pid=("${copy[@]}")
+                
+                        if ((${#pid[@]}>=$max)); then
+                          sleep 1
+                        else
+                          eval "${cmd[$i]}" &
+                          pid+=($!)
+                          ((i+=1))
+                        fi
+                    done
+                    ((${#pid[@]}>0)) && wait ${pid[@]}
+                    )
+                    unset IFS
+                }
+                
+                nxf_az_upload() {
+                    local name=$1
+                    local target=${2%/} ## remove ending slash
+                
+                    if [[ -d $name ]]; then
+                      azcopy cp "$name" "$target?$AZ_SAS" --recursive
+                    else 
+                      azcopy cp "$name" "$target/$name?$AZ_SAS"
+                    fi  
+                }
+                
+                nxf_az_download() {
+                    local source=$1
+                    local target=$2
+                    local basedir=$(dirname $2)
+                    local ret
+                    mkdir -p "$basedir"
+                
+                    ret=$(azcopy cp "$source?$AZ_SAS" "$target" 2>&1) || {
+                        ## if fails check if it was trying to download a directory
+                        mkdir -p $target
+                        azcopy cp "$source/*?$AZ_SAS" "$target" --recursive >/dev/null || {
+                            rm -rf $target
+                            >&2 echo "Unable to download path: $source"
+                            exit 1
+                        }
+                    }
+                }
+
                 '''.stripIndent(true)
     }
 
@@ -237,7 +359,11 @@ class AzFileCopyStrategyTest extends Specification {
 
         binding.launch_cmd == '/bin/bash .command.run nxf_trace'
 
-        binding.task_env == null
+        binding.task_env == '''\
+                    export PATH="$PWD/.nextflow-bin:$PATH"
+                    export AZCOPY_LOG_LOCATION="$PWD/.azcopy_log"
+                    export AZ_SAS="12345"
+                    '''.stripIndent()
 
         binding.helpers_script == '''\
                     # bash helper functions
@@ -293,22 +419,14 @@ class AzFileCopyStrategyTest extends Specification {
                         unset IFS
                     }
 
-                    SAS='12345'
-                    
-                    set -x 
-                    
-                    azcopy() {
-                        AZCOPY_LOG_LOCATION=$PWD/.azcopy_log ./azcopy "$@"
-                    }
-                    
                     nxf_az_upload() {
                         local name=$1
                         local target=${2%/} ## remove ending slash
                     
                         if [[ -d $name ]]; then
-                          azcopy cp "$name" "$target?$SAS" --recursive
+                          azcopy cp "$name" "$target?$AZ_SAS" --recursive
                         else 
-                          azcopy cp "$name" "$target/$name?$SAS"
+                          azcopy cp "$name" "$target/$name?$AZ_SAS"
                         fi  
                     }
                     
@@ -319,10 +437,10 @@ class AzFileCopyStrategyTest extends Specification {
                         local ret
                         mkdir -p "$basedir"
                     
-                        ret=$(azcopy cp "$source?$SAS" "$target" 2>&1) || {
+                        ret=$(azcopy cp "$source?$AZ_SAS" "$target" 2>&1) || {
                             ## if fails check if it was trying to download a directory
                             mkdir -p $target
-                            azcopy cp "$source/*?$SAS" "$target" --recursive >/dev/null || {
+                            azcopy cp "$source/*?$AZ_SAS" "$target" --recursive >/dev/null || {
                                 rm -rf $target
                                 >&2 echo "Unable to download path: $source"
                                 exit 1
