@@ -47,7 +47,7 @@ class GoogleLifeSciencesFileCopyStrategyTest extends GoogleSpecification {
         then:
         result == '''\
                 echo start | gsutil -q cp  -c - gs://my-bucket/work/xx/yy/.command.begin
-                downloads=()
+                downloads=(true)
                 downloads+=("nxf_gs_download gs://my-bucket/bar/foo.txt foo.txt ")
                 nxf_parallel "${downloads[@]}"
                 '''.stripIndent()

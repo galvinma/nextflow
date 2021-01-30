@@ -4,7 +4,7 @@ import java.nio.file.Path
 
 import groovy.transform.CompileStatic
 import groovy.util.logging.Slf4j
-import nextflow.cloud.CloudTransferOptions
+import nextflow.cloud.azure.config.AzConfig
 import nextflow.executor.BashFunLib
 import nextflow.executor.SimpleFileCopyStrategy
 import nextflow.processor.TaskBean
@@ -20,6 +20,7 @@ import nextflow.util.Escape
 @CompileStatic
 class AzFileCopyStrategy extends SimpleFileCopyStrategy {
 
+    private AzConfig config
     private int maxTransferAttempts
     private int maxParallelTransfers
     private Duration delayBetweenAttempts
@@ -28,14 +29,14 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
 
     protected AzFileCopyStrategy() {}
 
-    AzFileCopyStrategy(TaskBean bean, String sas, Path remoteBinDir) {
+    AzFileCopyStrategy(TaskBean bean, AzBatchExecutor executor) {
         super(bean)
-        this.sasToken = sas
-        this.remoteBinDir = remoteBinDir
-        //
-        this.maxParallelTransfers = 1 // /*config.maxParallelTransfers ?:*/ CloudTransferOptions.MAX_TRANSFER
-        this.maxTransferAttempts = /*config.maxTransferAttempts ?:*/ CloudTransferOptions.MAX_TRANSFER_ATTEMPTS
-        this.delayBetweenAttempts = /*config.delayBetweenAttempts ?:*/ CloudTransferOptions.DEFAULT_DELAY_BETWEEN_ATTEMPTS
+        this.config = executor.config
+        this.remoteBinDir = executor.remoteBinDir
+        this.sasToken = config.storage().sasToken
+        this.maxParallelTransfers = config.batch().maxParallelTransfers
+        this.maxTransferAttempts = config.batch().maxTransferAttempts
+        this.delayBetweenAttempts = config.batch().delayBetweenAttempts
     }
 
     @Override

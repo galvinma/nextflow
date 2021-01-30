@@ -2,6 +2,7 @@ package nextflow.cloud.azure.batch
 
 import nextflow.cloud.azure.config.AzConfig
 import nextflow.cloud.azure.config.AzPoolOpts
+import nextflow.processor.TaskConfig
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
 import nextflow.util.MemoryUnit
@@ -30,12 +31,12 @@ class AzBatchServiceTest extends Specification {
         def svc = new AzBatchService(exec)
 
         expect:
-        svc.makeJobId(task) == EXPECTED
+        svc.makeJobId(task) =~ EXPECTED
 
         where:
         NAME        | EXPECTED
-        'foo'       | 'nf-job-foo'
-        'foo  bar'  | 'nf-job-foo_bar'
+        'foo'       | /job-\w+-foo/
+        'foo  bar'  | /job-\w+-foo_bar/
     }
 
     def 'should list locations' () {
@@ -134,7 +135,7 @@ class AzBatchServiceTest extends Specification {
         when:
         ret = svc.findBestVm('northeurope', 4, null, 'standard_a?')
         then:
-        ret.name == 'Standard_A3'
+        ret.name == 'Standard_A6'
     }
 
     def 'should match familty' () {
@@ -213,7 +214,7 @@ class AzBatchServiceTest extends Specification {
         def svc = new AzBatchService(exec)
 
         when:
-        def ret = svc.scalingFormula( new AzPoolOpts(vmCount: 4) )
+        def ret = svc.scaleFormula( new AzPoolOpts(vmCount: 4) )
         then:
         ret.contains('$TargetDedicatedNodes = 4;')
         ret.contains('$TargetDedicatedNodes = (lifespan > startup ? (max($RunningTasks.GetSample(span, ratio), $ActiveTasks.GetSample(span, ratio)) == 0 ? 0 : $TargetDedicatedNodes) : 4);')
@@ -283,6 +284,35 @@ class AzBatchServiceTest extends Specification {
         svc.checkPoolId('abc 10')
         then:
         thrown(IllegalArgumentException)
+
+    }
+
+    def 'should create spec for autotask' () {
+        given:
+        def LOC = 'europe'
+        def CFG = new AzConfig([batch: [location: LOC]])
+        def CPUS = 2
+        def MEM = MemoryUnit.of('1 GB')
+        def TYPE = 'Standard_X1'
+        def VM = new AzVmType(name: TYPE, numberOfCores: CPUS)
+        and:
+        def exec = Mock(AzBatchExecutor) { getConfig() >> CFG }
+        AzBatchService svc = Spy(AzBatchService, constructorArgs: [exec])
+        and:
+        def TASK = Mock(TaskRun) {
+            getConfig() >> Mock(TaskConfig) {
+                getMemory() >> MEM
+                getCpus() >> CPUS
+                getMachineType() >> TYPE
+            }
+        }
+
+        when:
+        def spec = svc.specFromAutoPool(TASK)
+        then:
+        1 * svc.guessBestVm(LOC, CPUS, MEM, TYPE) >> VM
+        and:
+        spec.poolId == 'nf-pool-119f4952e46ebddfbcd0f8ae9588d999-Standard_X1'
 
     }
 

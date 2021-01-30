@@ -16,15 +16,24 @@
 
 package nextflow.cloud.azure.config
 
+import com.google.common.hash.Hasher
 import com.microsoft.azure.batch.protocol.models.OSType
 import com.microsoft.azure.batch.protocol.models.VerificationType
+import groovy.transform.CompileStatic
+import groovy.transform.EqualsAndHashCode
+import groovy.transform.ToString
+import nextflow.util.CacheFunnel
+import nextflow.util.CacheHelper
 
 /**
  * Model the setting of a VM pool
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
-class AzPoolOpts {
+@ToString(includeNames = true, includePackage = false)
+@EqualsAndHashCode
+@CompileStatic
+class AzPoolOpts implements CacheFunnel {
 
     static public final String DEFAULT_PUBLISHER = "microsoft-azure-batch"
     static public final String DEFAULT_OFFER = "centos-container"
@@ -52,5 +61,16 @@ class AzPoolOpts {
         this.vmCount = opts.vmCount as Integer ?: 1
         this.autoScale = opts.autoScale as boolean
         this.scaleFormula = opts.scaleFormula
+    }
+
+    @Override
+    Hasher funnel(Hasher hasher, CacheHelper.HashMode mode) {
+        hasher.putUnencodedChars(publisher)
+        hasher.putUnencodedChars(offer)
+        hasher.putUnencodedChars(vmType)
+        hasher.putInt(vmCount)
+        hasher.putBoolean(autoScale)
+        hasher.putUnencodedChars(scaleFormula ?: '')
+        return hasher
     }
 }

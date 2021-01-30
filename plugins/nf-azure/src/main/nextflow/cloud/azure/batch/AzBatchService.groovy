@@ -50,6 +50,7 @@ import nextflow.cloud.azure.config.AzPoolOpts
 import nextflow.cloud.azure.nio.AzPath
 import nextflow.processor.TaskProcessor
 import nextflow.processor.TaskRun
+import nextflow.util.CacheHelper
 import nextflow.util.MemoryUnit
 import nextflow.util.MustacheTemplateEngine
 import nextflow.util.Rnd
@@ -229,11 +230,10 @@ class AzBatchService implements Closeable {
         return client
     }
 
-
-    AzTaskKey submitTask(TaskRun task, String sas) {
+    AzTaskKey submitTask(TaskRun task) {
         final poolId = getOrCreatePool(task)
         final jobId = getOrCreateJob(poolId, task)
-        runTask(poolId, jobId, task, sas)
+        runTask(poolId, jobId, task)
     }
 
     CloudTask getTask(AzTaskKey key) {
@@ -267,17 +267,19 @@ class AzBatchService implements Closeable {
                 .name
                 .trim()
                 .replaceAll(/[^a-zA-Z0-9-_]+/,'_')
-                .toLowerCase()
 
         final key = "job-${Rnd.hex()}-${name}"
         return key.size()>64 ? key.substring(0,64) : key
     }
 
-    AzTaskKey runTask(String poolId, String jobId, TaskRun task, String sas) {
+    AzTaskKey runTask(String poolId, String jobId, TaskRun task) {
         assert poolId, 'Missing Azure Batch poolId argument'
         assert jobId, 'Missing Azure Batch jobId argument'
         assert task, 'Missing Azure Batch task argument'
-        assert sas, 'Missing Azure Batch SAS argument'
+
+        final sas = config.storage().sasToken
+        if( !sas )
+            throw new IllegalArgumentException("Missing Azure Blob storage SAS token")
 
         final container = task.config.container as String
         if( !container )
@@ -299,7 +301,7 @@ class AzBatchService implements Closeable {
         final taskToAdd = new TaskAddParameter()
                 .withId(taskId)
                 .withContainerSettings(containerOpts)
-                .withCommandLine("bash ${TaskRun.CMD_RUN}")
+                .withCommandLine("sh -c 'bash ${TaskRun.CMD_RUN} 2>&1 | tee ${TaskRun.CMD_LOG}'")
                 .withResourceFiles(resourceFileUrls(task,sas))
                 .withOutputFiles(outputFileUrls(task, sas))
                 .withRequiredSlots(slots)
@@ -326,16 +328,19 @@ class AzBatchService implements Closeable {
                 .withHttpUrl(AzHelper.toHttpUrl(cmdScript, sas))
                 .withFilePath(TaskRun.CMD_SCRIPT)
 
+        if( task.stdin ) {
+            resFiles << new ResourceFile()
+                    .withHttpUrl(AzHelper.toHttpUrl(cmdScript, sas))
+                    .withFilePath(TaskRun.CMD_INFILE)
+        }
+
         return resFiles
     }
 
     protected List<OutputFile> outputFileUrls(TaskRun task, String sas) {
         List<OutputFile> result = new ArrayList<>(20)
-
-        result << destFile(TaskRun.CMD_OUTFILE, task.workDir, sas)
-        result << destFile(TaskRun.CMD_ERRFILE, task.workDir, sas)
         result << destFile(TaskRun.CMD_EXIT, task.workDir, sas)
-
+        result << destFile(TaskRun.CMD_LOG, task.workDir, sas)
         return result
     }
 
@@ -369,7 +374,7 @@ class AzBatchService implements Closeable {
         throw new IllegalStateException("Cannot find a matching VM image with publister=$opts.publisher; offer=$opts.offer; OS type=$opts.osType; verification type=$opts.verification")
     }
 
-    protected AzVmPoolSpec specFromConfig(String poolId) {
+    protected AzVmPoolSpec specFromConfigPool(String poolId) {
 
         def opts = config.batch().pool(poolId)
         if( !opts )
@@ -382,15 +387,16 @@ class AzBatchService implements Closeable {
         new AzVmPoolSpec(poolId: poolId, vmType: type, opts: opts)
     }
 
-    protected AzVmPoolSpec specFromTask(TaskRun task) {
+    protected AzVmPoolSpec specFromAutoPool(TaskRun task) {
         // define a stable pool name
         final loc = config.batch().location
         if( !loc )
             throw new IllegalArgumentException("Missing Azure Batch location")
 
+        final opts = config.batch().autoPoolOpts()
         final mem = task.config.getMemory()
         final cpus = task.config.getCpus()
-        final type = task.config.getMachineType() ?: config.batch().autoPoolOpts().vmType
+        final type = task.config.getMachineType() ?: opts.vmType
         if( !type )
             throw new IllegalArgumentException("Missing Azure Batch VM type")
 
@@ -400,8 +406,9 @@ class AzBatchService implements Closeable {
             throw new IllegalArgumentException(msg)
         }
 
-        final poolId = "nf-$vmType.name".toLowerCase()
-        return new AzVmPoolSpec(poolId: poolId, vmType: vmType)
+        final key = CacheHelper.hasher([vmType.name, opts]).hash().toString()
+        final poolId = "nf-pool-$key-$vmType.name"
+        return new AzVmPoolSpec(poolId: poolId, vmType: vmType, opts: opts)
     }
 
     protected void checkPool(CloudPool pool, AzVmPoolSpec spec) {
@@ -422,19 +429,24 @@ class AzBatchService implements Closeable {
     }
 
     protected AzVmPoolSpec specForTask(TaskRun task) {
-
-        def poolId = task.config.queue as String
-        if( !poolId && !config.batch().autoPool ) {
-            throw new IllegalArgumentException("No Azure Batch pool was specified for task '${task.name}' - Either specify the pool name using the 'queue' diretive or enable the 'autoPool' provision option")
+        String poolId = null
+        if( !config.batch().autoPool ) {
+            // the process queue is used as poolId
+            poolId = task.config.queue as String
+            if( !poolId ) {
+                throw new IllegalArgumentException("No Azure Batch pool was specified for task '${task.name}' - Either specify the pool name using the 'queue' diretive or enable the 'autoPool' provision option")
+            }
+            // sanity check
+            checkPoolId(poolId)
+            // check if cached
+            if( allPools.containsKey(poolId) ) {
+                return allPools.get(poolId)
+            }
         }
-        checkPoolId(poolId)
-
-        if( poolId && allPools.containsKey(poolId) )
-            return allPools.get(poolId)
 
         return poolId
-                ? specFromConfig(poolId)
-                : specFromTask(task)
+                ? specFromConfigPool(poolId)
+                : specFromAutoPool(task)
 
     }
 
@@ -505,7 +517,7 @@ class AzBatchService implements Closeable {
             poolParams
                     .withEnableAutoScale(true)
                     .withAutoScaleEvaluationInterval( new Period().withSeconds(300) ) // cannot be smaller
-                    .withAutoScaleFormula(scalingFormula(spec.opts))
+                    .withAutoScaleFormula(scaleFormula(spec.opts))
         }
         else {
             poolParams
@@ -515,30 +527,29 @@ class AzBatchService implements Closeable {
         client.poolOperations().createPool(poolParams)
     }
 
-    protected String scalingFormula(AzPoolOpts opts) {
+    protected String scaleFormula(AzPoolOpts opts) {
         // https://docs.microsoft.com/en-us/azure/batch/batch-automatic-scaling
-        def scalingFormula = '''\
-                $TargetDedicatedNodes = {{vmNodes}};
+        def DEFAULT_FORMULA = '''\
+                $TargetDedicatedNodes = {{vmCount}};
                 lifespan         = time() - time("{{now}}");
                 span             = TimeInterval_Minute * 60;
                 startup          = TimeInterval_Minute * 10;
                 ratio            = 50;
-                $TargetDedicatedNodes = (lifespan > startup ? (max($RunningTasks.GetSample(span, ratio), $ActiveTasks.GetSample(span, ratio)) == 0 ? 0 : $TargetDedicatedNodes) : {{vmNodes}});
+                $TargetDedicatedNodes = (lifespan > startup ? (max($RunningTasks.GetSample(span, ratio), $ActiveTasks.GetSample(span, ratio)) == 0 ? 0 : $TargetDedicatedNodes) : {{vmCount}});
                 '''.stripIndent()
 
+        final scaleFormula = opts.scaleFormula ?: DEFAULT_FORMULA
         final vars = new HashMap<String,String>()
-        vars.vmNodes = opts.vmCount
+        vars.vmCount = opts.vmCount
         vars.now = Instant.now().toString()
-        return new MustacheTemplateEngine().render(scalingFormula, vars)
+        return new MustacheTemplateEngine().render(scaleFormula, vars)
     }
 
     void deleteTask(AzTaskKey key) {
         client.taskOperations().deleteTask(key.jobId, key.taskId)
     }
 
-    @Override
-    void close() {
-        // cleanup app successful jobs
+    protected void cleanupJobs() {
         for( Map.Entry<TaskProcessor,String> entry : allJobIds ) {
             final proc = entry.key
             final jobId = entry.value
@@ -555,5 +566,16 @@ class AzBatchService implements Closeable {
                 log.warn "Unable to delete Azure batch job ${jobId} - Reason: ${e.message ?: e}"
             }
         }
+    }
+
+    protected void cleanupPools() {
+        // TODO
+    }
+
+    @Override
+    void close() {
+        // cleanup app successful jobs
+        cleanupJobs()
+        cleanupPools()
     }
 }

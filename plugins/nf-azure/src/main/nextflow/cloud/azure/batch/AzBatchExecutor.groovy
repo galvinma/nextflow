@@ -50,8 +50,6 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
 
     private AzBatchService batchService
 
-    private String sasToken
-
     /**
      * @return {@code true} to signal containers are managed directly the AWS Batch service
      */
@@ -93,6 +91,15 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
         }
     }
 
+    protected void initBatchService() {
+        config = AzConfig.getConfig(session)
+        batchService = new AzBatchService(this)
+        // generate a SAS token if missing
+        if( !config.storage().sasToken )
+            config.storage().sasToken = AzHelper.generateContainerSas(workDir, config.storage().tokenDuration)
+
+        session.onShutdown { batchService.close() }
+    }
 
     /**
      * Initialise the AWS batch executor.
@@ -100,23 +107,10 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
     @Override
     protected void register() {
         super.register()
-        config = AzConfig.getConfig(session)
-        batchService = new AzBatchService(this)
-        sasToken = config.storage().sasToken ?: AzHelper.generateContainerSas(workDir, config.storage().tokenDuration)
-        session.onShutdown { batchService.close() }
+        initBatchService()
         validateWorkDir()
         validatePathDir()
         uploadBinDir()
-    }
-
-
-    @PackageScope
-    Path getRemoteBinDir() {
-        return remoteBinDir
-    }
-
-    @PackageScope String getSasToken() {
-        return sasToken
     }
 
     @PackageScope AzConfig getConfig() {
@@ -136,5 +130,7 @@ class AzBatchExecutor extends Executor implements ExtensionPoint {
     AzBatchService getBatchService() {
         return batchService
     }
+
+    Path getRemoteBinDir() { return remoteBinDir }
 
 }

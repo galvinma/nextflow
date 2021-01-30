@@ -16,14 +16,26 @@
 
 package nextflow.cloud.azure.config
 
-import groovy.transform.CompileStatic
 
+import java.util.regex.Matcher
+import java.util.regex.Pattern
+
+import groovy.transform.CompileStatic
+import nextflow.cloud.CloudTransferOptions
+import nextflow.util.Duration
 /**
+ * Model Azure Batch pool config settings
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
 @CompileStatic
-class AzBatchOpts {
+class AzBatchOpts implements CloudTransferOptions {
+
+    static final private Pattern ENDPOINT_PATTERN = ~/https:\/\/(\w+)\.(\w+)\.batch\.azure\.com/
+
+    int maxParallelTransfers
+    int maxTransferAttempts
+    Duration delayBetweenAttempts
 
     String accountName
     String accountKey
@@ -43,6 +55,9 @@ class AzBatchOpts {
         cleanup = config.cleanup
         autoPool = config.autoPool
         pools = parsePools(config.pools instanceof Map ? config.pools as Map<String,Map> : Collections.<String,Map>emptyMap())
+        maxParallelTransfers = config.maxParallelTransfers ? config.maxParallelTransfers as int : MAX_TRANSFER
+        maxTransferAttempts = config.maxTransferAttempts ? config.maxTransferAttempts as int : MAX_TRANSFER_ATTEMPTS
+        delayBetweenAttempts = config.delayBetweenAttempts ? config.delayBetweenAttempts as Duration : DEFAULT_DELAY_BETWEEN_ATTEMPTS
     }
 
     static Map<String,AzPoolOpts> parsePools(Map<String,Map> pools) {
@@ -65,6 +80,30 @@ class AzBatchOpts {
 
     String toString() {
         "endpoint=$endpoint; account-name=$accountName; account-key=${accountKey?.redact()}"
+    }
+
+    private List<String> endpointParts() {
+        // try to infer the account name from the endpoint
+        Matcher m
+        if( endpoint && (m = ENDPOINT_PATTERN.matcher(endpoint)).matches() ) {
+            return [ m.group(1), m.group(2) ]
+        }
+        else {
+            return Collections.emptyList()
+        }
+    }
+
+    String getAccountName() {
+        if( accountName )
+            return accountName
+        return endpointParts()[0]
+    }
+
+    String getLocation() {
+        if( location )
+            return location
+        // try to infer the location name from the endpoint
+        return endpointParts()[1]
     }
 
     String getEndpoint() {

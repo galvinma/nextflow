@@ -51,10 +51,6 @@ class AzBatchTaskHandler extends TaskHandler {
 
     private volatile TaskState taskState
 
-    private String sasToken
-
-    private Path remoteBinDir
-
     AzBatchTaskHandler(TaskRun task, AzBatchExecutor executor) {
         super(task)
         this.executor = executor
@@ -62,10 +58,11 @@ class AzBatchTaskHandler extends TaskHandler {
         this.outputFile = task.workDir.resolve(TaskRun.CMD_OUTFILE)
         this.errorFile = task.workDir.resolve(TaskRun.CMD_ERRFILE)
         this.exitFile = task.workDir.resolve(TaskRun.CMD_EXIT)
-        this.remoteBinDir = executor.remoteBinDir
-        this.sasToken = executor.sasToken
         validateConfiguration()
     }
+
+    /** only for testing purpose - DO NOT USE */
+    protected AzBatchTaskHandler() { }
 
     AzBatchService getBatchService() {
         return executor.batchService
@@ -77,16 +74,18 @@ class AzBatchTaskHandler extends TaskHandler {
         }
     }
 
+    protected BashWrapperBuilder createBashWrapper() {
+        new AzBatchScriptLauncher(taskBean, executor)
+    }
+
     @Override
     void submit() {
         log.debug "[AZURE BATCH] Submitting task $task.name - work-dir=${task.workDirStr}"
-        new BashWrapperBuilder(taskBean, new AzFileCopyStrategy(taskBean, sasToken, remoteBinDir)) {
-            @Override
-            protected boolean shouldUnstageOutputs() { return true }
-        }.build()
-
-        this.taskKey = batchService.submitTask(task, sasToken)
+        createBashWrapper().build()
+        // submit the task execution
+        this.taskKey = batchService.submitTask(task)
         log.debug "[AZURE BATCH] Submitted task $task.name with taskId=$taskKey"
+        // update the status 
         this.status = TaskStatus.SUBMITTED
     }
 
