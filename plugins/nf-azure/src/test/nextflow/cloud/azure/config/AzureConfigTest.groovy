@@ -57,9 +57,10 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountKey == null
         cfg.batch().accountName == null
         cfg.batch().endpoint == null
-        cfg.batch().cleanup == null
+        cfg.batch().deleteJobsOnCompletion == true
+        cfg.batch().deletePoolsOnCompletion == false
         cfg.batch().location == null
-        cfg.batch().autoPool == null
+        cfg.batch().autoPoolMode == null
         cfg.batch().autoPoolOpts().vmType == 'STANDARD_A1'
         cfg.batch().autoPoolOpts().vmCount == 1
         cfg.batch().autoPoolOpts().autoScale == false
@@ -80,8 +81,9 @@ class AzureConfigTest extends Specification {
                                              accountName: NAME,
                                              endpoint: ENDPOINT,
                                              location: LOCATION,
-                                             autoPool: true,
-                                             cleanup: true,
+                                             autoPoolMode: true,
+                                             deleteJobsOnCompletion: false,
+                                             deletePoolsOnCompletion: true,
                                              pools: [ myPool: [vmType: 'Foo_A1', autoScale: true] ]
                                      ]] ]
         }
@@ -93,8 +95,9 @@ class AzureConfigTest extends Specification {
         cfg.batch().accountName == NAME
         cfg.batch().endpoint == ENDPOINT
         cfg.batch().location == LOCATION
-        cfg.batch().autoPool == true
-        cfg.batch().cleanup == true
+        cfg.batch().autoPoolMode == true
+        cfg.batch().deleteJobsOnCompletion == false
+        cfg.batch().deletePoolsOnCompletion == true
         and:
         cfg.batch().pool('myPool').vmType == 'Foo_A1'
         cfg.batch().pool('myPool').autoScale == true
@@ -116,8 +119,7 @@ class AzureConfigTest extends Specification {
                                      [batch:[
                                              accountKey: KEY,
                                              accountName: NAME,
-                                             location: LOCATION,
-                                             cleanup: true ]] ]
+                                             location: LOCATION ]] ]
         }
 
         when:

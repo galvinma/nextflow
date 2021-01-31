@@ -41,8 +41,9 @@ class AzBatchOpts implements CloudTransferOptions {
     String accountKey
     String endpoint
     String location
-    Boolean cleanup
-    Boolean autoPool
+    Boolean autoPoolMode
+    Boolean deleteJobsOnCompletion
+    Boolean deletePoolsOnCompletion
 
     Map<String,AzPoolOpts> pools
 
@@ -52,8 +53,9 @@ class AzBatchOpts implements CloudTransferOptions {
         accountKey = config.accountKey
         endpoint = config.endpoint
         location = config.location
-        cleanup = config.cleanup
-        autoPool = config.autoPool
+        autoPoolMode = config.autoPoolMode
+        deleteJobsOnCompletion = config.deleteJobsOnCompletion
+        deletePoolsOnCompletion = config.deletePoolsOnCompletion
         pools = parsePools(config.pools instanceof Map ? config.pools as Map<String,Map> : Collections.<String,Map>emptyMap())
         maxParallelTransfers = config.maxParallelTransfers ? config.maxParallelTransfers as int : MAX_TRANSFER
         maxTransferAttempts = config.maxTransferAttempts ? config.maxTransferAttempts as int : MAX_TRANSFER_ATTEMPTS
@@ -112,5 +114,15 @@ class AzBatchOpts implements CloudTransferOptions {
         if( accountName && location )
             return "https://${accountName}.${location}.batch.azure.com"
         return null
+    }
+
+    boolean getDeleteJobsOnCompletion() {
+        // consider `null` as true
+        deleteJobsOnCompletion != Boolean.FALSE
+    }
+
+    boolean getDeletePoolsOnCompletion() {
+        // consider `null` as false
+        deletePoolsOnCompletion == Boolean.TRUE
     }
 }

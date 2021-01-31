@@ -430,7 +430,7 @@ class AzBatchService implements Closeable {
 
     protected AzVmPoolSpec specForTask(TaskRun task) {
         String poolId = null
-        if( !config.batch().autoPool ) {
+        if( !config.batch().autoPoolMode ) {
             // the process queue is used as poolId
             poolId = task.config.queue as String
             if( !poolId ) {
@@ -563,19 +563,28 @@ class AzBatchService implements Closeable {
                 client.jobOperations().deleteJob(jobId)
             }
             catch (Exception e) {
-                log.warn "Unable to delete Azure batch job ${jobId} - Reason: ${e.message ?: e}"
+                log.warn "Unable to delete Azure Batch job ${jobId} - Reason: ${e.message ?: e}"
             }
         }
     }
 
     protected void cleanupPools() {
-        // TODO
+        for( String poolId : allPools.keySet()) {
+            try {
+                client.poolOperations().deletePool(poolId)
+            }
+            catch (Exception e) {
+                log.warn "Unable to delete Azure Batch pool ${poolId} - Reason: ${e.message ?: e}"
+            }
+        }
     }
 
     @Override
     void close() {
         // cleanup app successful jobs
-        cleanupJobs()
-        cleanupPools()
+        if( config.batch().deleteJobsOnCompletion )
+            cleanupJobs()
+        if( config.batch().deletePoolsOnCompletion )
+            cleanupPools()
     }
 }

@@ -122,10 +122,7 @@ class AzBatchTaskHandler extends TaskHandler {
     }
 
     protected void deleteTask(AzTaskKey taskKey, TaskRun task) {
-        if( !taskKey )
-            return
-
-        if( cleanupDisabled() )
+        if( !taskKey || notDeleteTask() )
             return
 
         if( !task.isSuccess() ) {
@@ -141,8 +138,8 @@ class AzBatchTaskHandler extends TaskHandler {
         }
     }
 
-    protected boolean cleanupDisabled() {
-        return executor.config.batch().cleanup == false
+    protected boolean notDeleteTask() {
+        return !executor.config.batch().getDeleteJobsOnCompletion()
     }
 
     /**

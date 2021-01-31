@@ -7,19 +7,17 @@ import java.nio.file.Paths
 
 import com.azure.storage.blob.BlobServiceClient
 import com.azure.storage.blob.models.BlobStorageException
+import org.slf4j.Logger
+import org.slf4j.LoggerFactory
 /**
  *
  * @author Paolo Di Tommaso <paolo.ditommaso@gmail.com>
  */
 trait AzBaseSpec {
 
-    static private Random RND = new Random()
+    static final Logger log = LoggerFactory.getLogger(AzBaseSpec)
 
     abstract BlobServiceClient getStorageClient()
-
-    private String rnd() {
-        Integer.toHexString(RND.nextInt(Integer.MAX_VALUE))
-    }
 
     String createBucket(String containerName) {
         storageClient.createBlobContainer(containerName)
@@ -27,7 +25,9 @@ trait AzBaseSpec {
     }
 
     String createBucket() {
-        createBucket(getRndBucketName())
+        def name = getRndBucketName()
+        log.debug "Creating blob bucket '$name'"
+        createBucket(name)
     }
 
     String getRndBucketName() {
@@ -35,10 +35,12 @@ trait AzBaseSpec {
     }
 
     def createObject(String path, String content) {
+        log.debug "Creating blob object '$path'"
         createObject(Paths.get(path), content)
     }
 
     def createObject(Path path, String content) {
+        log.debug "Creating blob object '$path'"
         if( path.nameCount<=1 )
             throw new IllegalArgumentException("There should be at least one dir level: $path")
         final containerName = path.subpath(0,1).toString()
@@ -56,7 +58,7 @@ trait AzBaseSpec {
     }
 
     def createDirectory(String path) {
-
+        log.debug "Creating blob directory '$path'"
         final containerName = path.tokenize('/')[0]
         final blobName = path.tokenize('/')[1..-1].join('/') + '/'
         storageClient
@@ -67,6 +69,7 @@ trait AzBaseSpec {
     }
 
     def deleteObject(String path) {
+        log.debug "Deleting blob object '$path'"
         final containerName = path.tokenize('/')[0]
         final blobName = path.tokenize('/')[1..-1].join('/') + '/'
 
@@ -77,11 +80,13 @@ trait AzBaseSpec {
     }
 
     def deleteBucket(Path path) {
+        log.debug "Deleting blob bucket '$path'"
         assert path.nameCount == 1
         deleteBucket(path.getName(0).toString())
     }
 
     def deleteBucket(String bucketName) {
+        log.debug "Deleting blob bucket '$bucketName'"
         if( !bucketName )
             return
 
@@ -89,10 +94,12 @@ trait AzBaseSpec {
     }
 
     boolean existsPath(String path) {
+        log.debug "Check blob path exists '$path'"
         existsPath(Paths.get(path))
     }
 
     boolean existsPath(Path path) {
+        log.debug "Check blob path exists '$path'"
         if( path.nameCount == 1 ) {
             try {
                 storageClient
@@ -123,10 +130,12 @@ trait AzBaseSpec {
     }
 
     String readObject(String path) {
+        log.debug "Reading blob object '$path'"
         readObject(Paths.get(path))
     }
 
     String readObject(Path path) {
+        log.debug "Reading blob object '$path'"
         final containerName = path.subpath(0,1).toString()
         final blobName = path.subpath(1,path.nameCount).toString()
         try {
