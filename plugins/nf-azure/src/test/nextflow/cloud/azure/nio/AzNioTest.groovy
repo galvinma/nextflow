@@ -661,9 +661,9 @@ class AzNioTest extends Specification implements AzBaseSpec {
         files.contains("/$bucketName2/foo/bar/file.3" as String)
 
         cleanup:
-        deleteBucket(bucketName1)
-        deleteBucket(bucketName2)
-        deleteBucket(bucketName3)
+        tryDeleteBucket(bucketName1)
+        tryDeleteBucket(bucketName2)
+        tryDeleteBucket(bucketName3)
     }
 
 

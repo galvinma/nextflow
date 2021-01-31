@@ -35,7 +35,6 @@ trait AzBaseSpec {
     }
 
     def createObject(String path, String content) {
-        log.debug "Creating blob object '$path'"
         createObject(Paths.get(path), content)
     }
 
@@ -91,6 +90,15 @@ trait AzBaseSpec {
             return
 
         storageClient.deleteBlobContainer(bucketName)
+    }
+
+    def tryDeleteBucket(String bucketName) {
+        try {
+            deleteBucket(bucketName)
+        }
+        catch (Throwable t) {
+            log.warn ("Unable to delete blob bucket '$bucketName' - Raeason: ${t.message ?: t}")
+        }
     }
 
     boolean existsPath(String path) {
