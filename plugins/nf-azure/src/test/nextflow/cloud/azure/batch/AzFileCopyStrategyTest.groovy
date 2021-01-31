@@ -137,7 +137,7 @@ class AzFileCopyStrategyTest extends Specification {
                         pid=("${copy[@]}")
                 
                         if ((${#pid[@]}>=$max)); then
-                          sleep 1
+                          sleep 0.2
                         else
                           eval "${cmd[$i]}" &
                           pid+=($!)
@@ -155,9 +155,9 @@ class AzFileCopyStrategyTest extends Specification {
                 
                     if [[ -d $name ]]; then
                       azcopy cp "$name" "$target?$AZ_SAS" --recursive
-                    else 
+                    else
                       azcopy cp "$name" "$target/$name?$AZ_SAS"
-                    fi  
+                    fi
                 }
                 
                 nxf_az_download() {
@@ -260,7 +260,7 @@ class AzFileCopyStrategyTest extends Specification {
                         pid=("${copy[@]}")
                 
                         if ((${#pid[@]}>=$max)); then
-                          sleep 1
+                          sleep 0.2
                         else
                           eval "${cmd[$i]}" &
                           pid+=($!)
@@ -278,9 +278,9 @@ class AzFileCopyStrategyTest extends Specification {
                 
                     if [[ -d $name ]]; then
                       azcopy cp "$name" "$target?$AZ_SAS" --recursive
-                    else 
+                    else
                       azcopy cp "$name" "$target/$name?$AZ_SAS"
-                    fi  
+                    fi
                 }
                 
                 nxf_az_download() {
@@ -407,7 +407,7 @@ class AzFileCopyStrategyTest extends Specification {
                             pid=("${copy[@]}")
 
                             if ((${#pid[@]}>=$max)); then
-                              sleep 1
+                              sleep 0.2
                             else
                               eval "${cmd[$i]}" &
                               pid+=($!)
@@ -425,9 +425,9 @@ class AzFileCopyStrategyTest extends Specification {
                     
                         if [[ -d $name ]]; then
                           azcopy cp "$name" "$target?$AZ_SAS" --recursive
-                        else 
+                        else
                           azcopy cp "$name" "$target/$name?$AZ_SAS"
-                        fi  
+                        fi
                     }
                     
                     nxf_az_download() {

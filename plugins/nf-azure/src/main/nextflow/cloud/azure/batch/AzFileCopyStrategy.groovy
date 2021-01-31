@@ -70,9 +70,9 @@ class AzFileCopyStrategy extends SimpleFileCopyStrategy {
         
             if [[ -d $name ]]; then
               azcopy cp "$name" "$target?$AZ_SAS" --recursive
-            else 
+            else
               azcopy cp "$name" "$target/$name?$AZ_SAS"
-            fi  
+            fi
         }
         
         nxf_az_download() {
